@@ -36,19 +36,19 @@ export function dueReminders(habits: Habit[], get: EntryLookup, now = new Date()
   );
 }
 
-export async function notify(habits: Habit[], fallback: (msg: string) => void) {
+export async function notify(habits: Habit[], fallback: (msg: string) => void, body: (name: string) => string) {
   const d = todayKey();
   for (const h of habits) {
     markFired(firedKey(h.id, d));
-    const body = `Noch offen: ${h.name}`;
+    const text = body(h.name);
     if (permission() === 'granted') {
       try {
         const reg = await navigator.serviceWorker?.getRegistration();
-        if (reg) await reg.showNotification('Still', { body, tag: h.id, icon: './icon-192.png' });
-        else new Notification('Still', { body, tag: h.id });
+        if (reg) await reg.showNotification('Still', { body: text, tag: h.id, icon: './icon-192.png' });
+        else new Notification('Still', { body: text, tag: h.id });
         continue;
       } catch { /* fall through to in-app */ }
     }
-    fallback(body);
+    fallback(text);
   }
 }

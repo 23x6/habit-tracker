@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useDragControls, useMotionValueEvent, useReducedMotion, useVelocity, type MotionValue, type PanInfo } from 'framer-motion';
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useT } from '../i18n';
 import { HABIT_ICONS, UI_ICONS, type UIIcon } from '../lib/icons';
 import { useStore } from '../store';
 
@@ -55,6 +56,7 @@ export function useSwipeBlur(x: MotionValue<number>) {
 }
 
 export function Sheet({ open, onClose, title, children, footer }: { open: boolean; onClose: () => void; title: string; children: ReactNode; footer?: ReactNode }) {
+  const t = useT();
   const controls = useDragControls();
   const reduce = useReduce();
   const panel = useRef<HTMLDivElement>(null);
@@ -119,7 +121,7 @@ export function Sheet({ open, onClose, title, children, footer }: { open: boolea
               <div className="grabber" aria-hidden="true" />
               <div className="sheet-title-row">
                 <h2 id={titleId}>{title}</h2>
-                <button className="icon-btn" onClick={onClose} aria-label="Schließen">
+                <button className="icon-btn" onClick={onClose} aria-label={t.common.close}>
                   <Icon name="close" size={20} />
                 </button>
               </div>
@@ -147,6 +149,7 @@ function trapFocus(e: KeyboardEvent, root: HTMLElement) {
 }
 
 export function ToastHost() {
+  const t = useT();
   const { toast, dismissToast } = useStore();
   const reduce = useReduce();
   useEffect(() => {
@@ -176,7 +179,7 @@ export function ToastHost() {
                   dismissToast();
                 }}
               >
-                Rückgängig
+                {t.common.undo}
               </button>
             )}
           </motion.div>
@@ -187,6 +190,7 @@ export function ToastHost() {
 }
 
 export function Confirm({ open, title, text, action, onConfirm, onClose }: { open: boolean; title: string; text: string; action: string; onConfirm: () => void; onClose: () => void }) {
+  const t = useT();
   return (
     <Sheet
       open={open}
@@ -194,7 +198,7 @@ export function Confirm({ open, title, text, action, onConfirm, onClose }: { ope
       title={title}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Abbrechen</button>
+          <button className="btn" onClick={onClose}>{t.common.cancel}</button>
           <button
             className="btn danger"
             onClick={() => {
@@ -212,11 +216,24 @@ export function Confirm({ open, title, text, action, onConfirm, onClose }: { ope
   );
 }
 
+/**
+ * Segmented control (radio group). The selection pill slides with a short ease-out CSS transition (160 ms, no
+ * overshoot); a rapid second click retargets from the current position instead of queuing. Arrow keys,
+ * Home and End move the selection like a native radio group.
+ */
 export function Segmented<T extends string | number>({ value, options, onChange, label }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string }) {
   const i = Math.max(0, options.findIndex((o) => o.value === value));
   const n = options.length;
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const next = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: n - 1 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    const j = (next + n) % n;
+    onChange(options[j].value);
+    e.currentTarget.querySelectorAll<HTMLButtonElement>('button')[j]?.focus();
+  };
   return (
-    <div className="segmented" role="radiogroup" aria-label={label}>
+    <div className="segmented" role="radiogroup" aria-label={label} onKeyDown={onKeyDown}>
       {/* One CSS-transformed pill (no layoutId: shared layout inside exiting sheets blocked AnimatePresence removal). */}
       <span className="seg-pill" aria-hidden="true" style={{ width: `calc((100% - 6px - ${(n - 1) * 2}px) / ${n})`, transform: `translateX(calc(${i} * (100% + 2px)))` }} />
       {options.map((o) => (
@@ -224,6 +241,97 @@ export function Segmented<T extends string | number>({ value, options, onChange,
           <span className="seg-label">{o.label}</span>
         </button>
       ))}
+    </div>
+  );
+}
+
+const SWITCH_MS = 140;
+
+/**
+ * Swap of mode-dependent content (fields that depend on a segmented control).
+ *
+ * One owner for height: only the instance whose `id` changed animates its own height — a 140 ms CSS
+ * transition from its current visual height to the new content's height. Ancestors keep `height: auto` and
+ * simply follow, so nested instances never run competing animations. No React state changes per frame.
+ *
+ * The outgoing content is removed immediately (no exit animation): the new mode shows at once, nothing stale
+ * stays focusable or in the layout, and rapid clicks always end on the latest selection. The incoming content
+ * fades in with 4 px travel and a 3 px blur on this content only (CSS animation, ends at `filter: none`).
+ * Reduced motion: no height animation, no blur or travel (opacity only).
+ *
+ * `focusFallback`: if the change removed the element that had focus, focus moves there (e.g. the selected
+ * segment). Ordinary re-renders never move focus.
+ */
+export function SwitchContent({ id, children, focusFallback }: { id: string | number; children: ReactNode; focusFallback?: () => HTMLElement | null | undefined }) {
+  const reduce = useReduce();
+  const box = useRef<HTMLDivElement>(null);
+  const shownHeight = useRef<number | null>(null); // last rendered height, kept by a ResizeObserver (no re-render)
+  const prevId = useRef(id);
+  const mounted = useRef(false);
+  const focusedInside = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    mounted.current = true;
+    const el = box.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => (shownHeight.current = el.getBoundingClientRect().height));
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      clearTimeout(timer.current);
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (prevId.current === id) return;
+    prevId.current = id;
+    const el = box.current;
+    if (!el) return;
+
+    if (focusedInside.current && !el.contains(document.activeElement)) {
+      focusedInside.current = false;
+      focusFallback?.()?.focus();
+    }
+
+    const settle = () => {
+      clearTimeout(timer.current);
+      el.style.height = el.style.transition = el.style.overflow = '';
+    };
+    // Mid-transition the inline height is set and the rect is the current visual height; at rest the DOM
+    // already shows the new content, so the height before the change comes from the observer.
+    const from = el.style.height ? el.getBoundingClientRect().height : shownHeight.current;
+    el.style.transition = 'none';
+    el.style.height = '';
+    const to = el.getBoundingClientRect().height;
+    if (reduce || from == null || Math.abs(from - to) < 1) return settle();
+    el.style.overflow = 'hidden'; // only while this container's height moves
+    el.style.height = `${from}px`;
+    void el.offsetHeight; // commit the start value before transitioning
+    el.style.transition = `height ${SWITCH_MS}ms cubic-bezier(0.2, 0.7, 0.2, 1)`;
+    el.style.height = `${to}px`;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(settle, SWITCH_MS + 80); // fallback if transitionend never fires
+  }, [id, reduce, focusFallback]);
+
+  return (
+    <div
+      ref={box}
+      className="switch-content"
+      onTransitionEnd={(e) => {
+        // Only this container's own height transition ends the swap (not a child's transition).
+        if (e.target !== e.currentTarget || e.propertyName !== 'height') return;
+        clearTimeout(timer.current);
+        e.currentTarget.style.height = e.currentTarget.style.transition = e.currentTarget.style.overflow = '';
+      }}
+      onFocusCapture={() => (focusedInside.current = true)}
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) focusedInside.current = false;
+      }}
+    >
+      <div key={id} className={mounted.current ? (reduce ? 'switch-in-reduced' : 'switch-in') : undefined}>
+        {children}
+      </div>
     </div>
   );
 }

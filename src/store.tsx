@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useT } from './i18n';
 import { addDays, startOfWeek, today as todayKey, type DateKey } from './lib/date';
 import { emptySnapshot, StillDb, type Conflict, type Kind, type Op, type Snapshot } from './lib/db';
 import { missingExamples } from './lib/examples';
@@ -80,6 +81,16 @@ interface Store {
   applyOps: (ops: Op[], message?: string) => Promise<void>;
   resolveConflict: (c: Conflict, keep: 'local' | 'server') => Promise<void>;
   syncNow: () => void;
+  /** Local writes in flight (IndexedDB transaction not yet committed). */
+  saving: boolean;
+  /** Last local write that failed; nothing of it was stored. `retry` writes the same change again. */
+  saveError: { message: string; retry: () => void } | null;
+  /** Unsent form text (journal / analysis drafts), stored in this partition's local database only. */
+  drafts: {
+    load: <T>(key: string) => Promise<T | undefined>;
+    save: (key: string, value: unknown) => Promise<void>;
+    clear: (key: string) => Promise<void>;
+  };
   showToast: (message: string, undo?: () => void) => void;
   dismissToast: () => void;
 }
@@ -129,6 +140,12 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
   snapRef.current = snap;
   const [today, setToday] = useState(todayKey());
   const [toast, setToast] = useState<Toast | null>(null);
+  const [savingCount, setSavingCount] = useState(0);
+  const [saveError, setSaveError] = useState<{ message: string; ops: Op[] } | null>(null);
+  // Toast texts are produced inside long-lived callbacks: read the current language through a ref.
+  const t = useT();
+  const tRef = useRef(t);
+  tRef.current = t;
   const [sync, setSync] = useState<SyncState | null>(null);
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const toastSeq = useRef(0);
@@ -189,11 +206,17 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
   const commit = useCallback(
     async (ops: Op[]): Promise<Op[]> => {
       const undo = inverse(snapRef.current, ops);
+      setSavingCount((n) => n + 1);
       try {
+        // Record and its pending sync operation are written in one IndexedDB transaction (StillDb.write).
         await db.write(ops);
       } catch (e) {
-        showToast('Speichern fehlgeschlagen: ' + (e instanceof Error ? e.message : String(e)));
+        const message = e instanceof Error ? e.message : String(e);
+        setSaveError({ message, ops });
+        showToast(tRef.current.save.saveFailedText(message));
         throw e;
+      } finally {
+        setSavingCount((n) => n - 1);
       }
       setSnap((s) => applyOps(s, ops));
       return undo;
@@ -217,7 +240,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
 
   const setEntry: Store['setEntry'] = useCallback(
     async (habit, date, value, note, message) => {
-      if (date > todayKey()) return showToast('Zukünftige Tage können nicht erfasst werden.');
+      if (date > todayKey()) return showToast(tRef.current.toast.futureDay);
       if (habit.kind === 'weekly') return; // weekly goals only count saved analyses
       const id = entryId(habit.id, date);
       const prev = entries.get(id);
@@ -248,7 +271,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
         order: habits.length ? Math.max(...habits.map((x) => x.order)) + 1 : 0, createdAt: Date.now(),
       };
       await commit([{ kind: 'habit', id: h.id, rec: h }]);
-      showToast(`„${h.name}" erstellt`);
+      showToast(tRef.current.toast.created(h.name));
     },
     [habits, commit, showToast],
   );
@@ -275,7 +298,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
         startDate: d.startDate, reminder: h.kind === 'weekly' ? null : d.reminder, rules,
       };
       await commit([{ kind: 'habit', id, rec }]);
-      showToast('Änderungen gesichert');
+      showToast(tRef.current.toast.changesSaved);
     },
     [commit, showToast],
   );
@@ -288,7 +311,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
       const pauses = archived
         ? [...h.pauses, { from: t, to: null }]
         : h.pauses.map((p) => (p.to === null ? { ...p, to: t } : p)).filter((p) => p.to !== p.from); // same-day archive+restore leaves no gap
-      await commitWithUndo([{ kind: 'habit', id, rec: { ...h, pauses } }], archived ? `„${h.name}" archiviert` : `„${h.name}" wiederhergestellt`);
+      await commitWithUndo([{ kind: 'habit', id, rec: { ...h, pauses } }], archived ? tRef.current.toast.archived(h.name) : tRef.current.toast.restored(h.name));
     },
     [commitWithUndo],
   );
@@ -303,7 +326,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
         ...s.completions.filter((c) => c.habitId === id).map((c) => ({ kind: 'completion' as const, id: c.id })),
       ];
       await commit(ops).catch(() => {});
-      showToast('Gewohnheit endgültig gelöscht');
+      showToast(tRef.current.toast.habitDeleted);
     },
     [commit, showToast],
   );
@@ -331,31 +354,31 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
     async (id: string, habitId: string, d: AnalysisDraft) => {
       const prev = find(snapRef.current.analyses, id);
       await commit([{ kind: 'analysis', id, rec: toAnalysis(id, habitId, d, prev, Date.now()) }]);
-      showToast(prev ? 'Analyse aktualisiert' : 'Analyse gesichert');
+      showToast(prev ? tRef.current.toast.analysisUpdated : tRef.current.toast.analysisSaved);
     },
     [commit, showToast],
   );
 
-  const deleteAnalysis = useCallback((id: string) => commitWithUndo([{ kind: 'analysis', id }], 'Analyse gelöscht'), [commitWithUndo]);
+  const deleteAnalysis = useCallback((id: string) => commitWithUndo([{ kind: 'analysis', id }], tRef.current.toast.analysisDeleted), [commitWithUndo]);
 
   const saveJournal = useCallback(
     async (id: string, d: JournalDraft) => {
       const prev = find(snapRef.current.journal, id);
       await commit([{ kind: 'journal', id, rec: toJournal(id, d, prev, Date.now()) }]);
-      showToast(prev ? 'Eintrag aktualisiert' : 'Eintrag gesichert');
+      showToast(prev ? tRef.current.toast.entryUpdated : tRef.current.toast.entrySaved);
     },
     [commit, showToast],
   );
 
-  const deleteJournal = useCallback((id: string) => commitWithUndo([{ kind: 'journal', id }], 'Eintrag gelöscht'), [commitWithUndo]);
+  const deleteJournal = useCallback((id: string) => commitWithUndo([{ kind: 'journal', id }], tRef.current.toast.entryDeleted), [commitWithUndo]);
 
   const toggleCompletion = useCallback(
     async (habit: Habit, date: DateKey) => {
-      if (date > todayKey()) return showToast('Zukünftige Tage können nicht erfasst werden.');
+      if (date > todayKey()) return showToast(tRef.current.toast.futureDay);
       const existing = !ruleAt(habit, date).multi ? find(snapRef.current.completions, completionId(habit.id, date)) : undefined;
-      if (existing) return commitWithUndo([{ kind: 'completion', id: existing.id }], `Erledigung entfernt`);
+      if (existing) return commitWithUndo([{ kind: 'completion', id: existing.id }], tRef.current.toast.completionRemoved);
       const c = makeCompletion(habit, date, Date.now());
-      await commitWithUndo([{ kind: 'completion', id: c.id, rec: c }], `„${habit.name}" · Erledigung hinzugefügt`);
+      await commitWithUndo([{ kind: 'completion', id: c.id, rec: c }], tRef.current.toast.completionAdded(habit.name));
     },
     [commitWithUndo, showToast],
   );
@@ -365,18 +388,18 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
       const c = makeCompletion(habit, date, Date.now(), prev);
       const ops: Op[] = [{ kind: 'completion', id: c.id, rec: c }];
       if (prev && prev.id !== c.id) ops.unshift({ kind: 'completion', id: prev.id }); // one-per-day id follows the date
-      await commitWithUndo(ops, prev ? 'Erledigung geändert' : `„${habit.name}" · Erledigung hinzugefügt`);
+      await commitWithUndo(ops, prev ? tRef.current.toast.completionChanged : tRef.current.toast.completionAdded(habit.name));
     },
     [commitWithUndo],
   );
 
-  const deleteCompletion = useCallback((id: string) => commitWithUndo([{ kind: 'completion', id }], 'Erledigung gelöscht'), [commitWithUndo]);
+  const deleteCompletion = useCallback((id: string) => commitWithUndo([{ kind: 'completion', id }], tRef.current.toast.completionDeleted), [commitWithUndo]);
 
   const addExamples = useCallback(async () => {
     const add = missingExamples(snapRef.current.habits, todayKey());
-    if (!add.length) return showToast('Alle Beispielgewohnheiten sind bereits vorhanden.');
+    if (!add.length) return showToast(tRef.current.toast.examplesPresent);
     await commit(add.map((h) => ({ kind: 'habit' as const, id: h.id, rec: h })));
-    showToast(add.length === 1 ? '1 Beispielgewohnheit hinzugefügt' : `${add.length} Beispielgewohnheiten hinzugefügt`);
+    showToast(tRef.current.toast.examplesAdded(add.length));
   }, [commit, showToast]);
 
   const replaceAll = useCallback(
@@ -399,9 +422,18 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
     async (c: Conflict, keep: 'local' | 'server') => {
       await db.resolveConflict(c, keep);
       await reload();
-      showToast(keep === 'local' ? 'Deine Version wird synchronisiert' : 'Version vom anderen Gerät behalten');
+      showToast(keep === 'local' ? tRef.current.toast.keptLocal : tRef.current.toast.keptServer);
     },
     [db, reload, showToast],
+  );
+
+  const drafts = useMemo<Store['drafts']>(
+    () => ({
+      load: <T,>(key: string) => db.getMeta<T>('draft:' + key),
+      save: (key, value) => db.setMeta('draft:' + key, value),
+      clear: (key) => db.deleteMeta('draft:' + key),
+    }),
+    [db],
   );
 
   const value = useMemo<Store>(
@@ -410,9 +442,19 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
       completions: snap.completions, sync, conflicts, getEntry, entriesOf, createHabit, updateHabit, setArchived, deleteHabit,
       reorder, setEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion,
       deleteCompletion, addExamples, replaceAll, applyOps: applyOpsCb, resolveConflict, syncNow: () => manager.current?.schedule(0),
+      saving: savingCount > 0,
+      saveError: saveError && {
+        message: saveError.message,
+        retry: () => {
+          const ops = saveError.ops;
+          setSaveError(null);
+          void commit(ops).catch(() => {});
+        },
+      },
+      drafts,
       showToast, dismissToast: () => setToast(null),
     }),
-    [partition, status, error, habits, snap, today, toast, sync, conflicts, getEntry, entriesOf, createHabit, updateHabit, setArchived, deleteHabit, reorder, setEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion, deleteCompletion, addExamples, replaceAll, applyOpsCb, resolveConflict, showToast],
+    [partition, status, error, habits, snap, today, toast, sync, conflicts, savingCount, saveError, drafts, commit, getEntry, entriesOf, createHabit, updateHabit, setArchived, deleteHabit, reorder, setEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion, deleteCompletion, addExamples, replaceAll, applyOpsCb, resolveConflict, showToast],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

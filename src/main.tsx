@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { AuthProvider, useAuth } from './auth';
+import { I18nProvider, useT } from './i18n';
 import { partitionFor } from './lib/auth';
 import { StoreProvider } from './store';
 import './styles.css';
@@ -10,7 +11,8 @@ import './styles.css';
  *  so no state, cache or pending write of one account can leak into another. */
 function Root() {
   const { state } = useAuth();
-  if (state.status === 'loading') return <div className="center-screen" aria-busy="true"><span className="spinner" aria-label="Lädt" /></div>;
+  const t = useT();
+  if (state.status === 'loading') return <div className="center-screen" aria-busy="true"><span className="spinner" aria-label={t.common.loading} /></div>;
   const p = partitionFor(state);
   return (
     <StoreProvider key={p.name} partition={p}>
@@ -21,9 +23,11 @@ function Root() {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthProvider>
-      <Root />
-    </AuthProvider>
+    <I18nProvider>
+      <AuthProvider>
+        <Root />
+      </AuthProvider>
+    </I18nProvider>
   </StrictMode>,
 );
 

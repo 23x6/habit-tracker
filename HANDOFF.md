@@ -7,6 +7,103 @@ A real Supabase project is now connected for local use (app at `http://localhost
 
 **Manually verified by the user:** sync in both directions between a normal browser window and an incognito window signed in to the same account. A habit and its completion synchronized correctly. Everything else against the real backend is still unverified (see "Not verified").
 
+## Iteration 4 (2026-11-10): dashboard, segmented motion, DE/EN, header, autosave
+Not committed yet at the time of writing.
+
+### Changes
+- **Dashboard:**
+  - From 768 px: large, centered at the top of the content (ring 224 px; 256 px from 1200 px; content up to 1160 px wide). The date title, week strip and actions share one row, with the list column (760 px) below.
+  - Phones: compact stacked card below the date (ring 148 px).
+  - Calculations unchanged (`src/lib/dashboard.ts` untouched).
+- **Segmented controls and mode switches:**
+  - *(Superseded by the schedule-selector fix below; timings there are current.)* The pill slides with a CSS transition that retargets from its current position on rapid clicks; labels fade their emphasis.
+  - `SwitchContent` (`src/components/ui.tsx`) for mode-dependent fields (habit type, schedule, dashboard caption).
+  - Only the swapped content is blurred, and the filter is removed at rest.
+  - Reduced motion: opacity only, no blur or height animation.
+  - Typed values stay in the form state. Per-type targets are stashed, so switching back restores them. Saving only uses the selected mode's fields.
+- **Localization:**
+  - Central dictionaries in `src/i18n/messages.ts`; `en` is typed against `de`.
+  - `I18nProvider` and `useT()` in `src/i18n/index.tsx`.
+  - Lib functions that produce text (validation, week labels, auth errors, import errors, reminders) take the dictionary as a parameter, German by default.
+  - Date and number formatting follow the language through `setDateLocale` in `src/lib/date.ts`.
+  - The language is stored per device in `localStorage` (`still-lang`) and sets `<html lang>`. German is the default.
+  - User content is never translated. Date keys, week start and calculations are independent of the language.
+- **Header (≥ 768 px):** save status, a DE/EN switch, and Log in / Log out reusing `AuthSheet` / `LogoutSheet`. During auth loading the button shows a stable spinner. Below 768 px the header is `display:none` (not focusable); Settings keeps the language and account controls.
+- **Autosave and sync:**
+  - Store: `saving`, a recoverable `saveError` with retry, and a `drafts` API.
+  - `SaveStatus` shows "Wird gespeichert …", "Lokal gespeichert", "Lokal gespeichert · Synchronisierung ausstehend", "Synchronisiert", the sync-failure state, and conflicts.
+  - Sync is also triggered on window `focus`.
+  - Journal and analysis drafts: `src/components/useDraft.ts`, stored in the partition's `meta` store under the `draft:` key prefix.
+
+### Guarantees (and their limits)
+- **Atomic local commit:**
+  - A confirmed change is written together with its outbox entry in one IndexedDB transaction (`StillDb.write`); if it fails, neither exists.
+  - The UI updates only after the transaction commits. Failures show "Speichern fehlgeschlagen" with "Erneut speichern".
+- **The outbox persists across reloads and crashes.** Sync triggers:
+  - about 1.2 s after a write (batched);
+  - app start, `online`, `focus`, becoming visible;
+  - every 30 s while visible;
+  - backoff retries after errors.
+- **Idempotent retries:** the operation id plus `last_op` on the server.
+- **Edits during an in-flight sync:** `ack` removes an outbox entry only if its `opId` still matches, so a newer edit stays queued.
+- **Drafts:**
+  - Saved after 0.7 s of no typing, on field blur, and when the form closes; restored on reopen; removed after an explicit save or "Entwurf verwerfen".
+  - Local per partition, never synced, never counted.
+- **Not guaranteed:**
+  - Text typed in the last moment before the debounce or a blur, if the tab is killed.
+  - Changes that haven't synced yet exist only in this browser's storage.
+  - No `beforeunload` or last-second network request is used.
+
+## Fix: schedule selector ("Täglich / Wochentage / X-mal pro Woche", "Daily / Weekdays / Times per week")
+
+### Root cause (reproduced before changing anything)
+Measured in Chromium at about 165 fps with 12 rounds of rapid clicks. The selection state itself always updated on the next frame; the problem was the shared `SwitchContent`:
+1. **Competing nested height animations.** The schedule fields' `SwitchContent` sits inside the habit-type `SwitchContent`. Each animated its own height with a spring, fed by a ResizeObserver that called React `setState` on every frame. While the inner area grew, the outer one kept re-measuring and re-targeting and lagged behind: the inner settled about 400 ms after the last click, the outer about **760 ms** after it.
+2. **Outgoing content lingered.** `AnimatePresence mode="popLayout"` kept up to **3 content blocks** during and after the burst. Outgoing blocks were absolutely positioned but still in the DOM and focusable (9 controls), and stale weekday buttons were visible next to the new mode's fields. The incoming block started from a height pinned near 0 px.
+3. **Stale callbacks.** `onAnimationComplete` from interrupted height animations switched clipping off mid-animation (`overflow: visible` while still moving), so content spilled over the following fields.
+4. **Slow selection pill:** 300 ms.
+
+Found while testing at 320 px (also fixed here):
+- the German labels were `nowrap`, so the selector was wider than the sheet (horizontal scroll);
+- the weekly-target field was squeezed to 26 px by a CSS specificity issue;
+- the end keyframe left `filter: blur(0px)` on settled content.
+
+### Fix (shared code only: `SwitchContent` and `Segmented` in `ui.tsx`, plus CSS)
+- **One height owner.** Only the `SwitchContent` whose `id` changed animates its own height: a 140 ms CSS transition from its current visual height to the new height (FLIP, ease-out without overshoot). Ancestors stay at `height: auto` and follow.
+  - No React state per frame; the ResizeObserver only updates a ref.
+  - Clipping is set inline only for that transition and cleared on its own `transitionend`, or by a timeout fallback.
+  - Rapid clicks retarget from the current height.
+- **No exit animation.** Outgoing content is removed immediately, so it is never in the layout and never focusable, and the latest selection always wins.
+  - Incoming content: CSS keyframes over 140 ms (opacity, 4 px travel, 3 px blur), with `animation-fill-mode: backwards`, so no filter remains afterwards.
+  - Reduced motion: an opacity fade over 100 ms; no blur, travel or height animation.
+- **Focus.** `focusFallback`: if a mode change removed the element that had focus (e.g. a tap without focusing the button, as on iOS), focus moves to the selected segment. Ordinary re-renders never move focus.
+- **Segmented:**
+  - the pill takes 160 ms (`--ease-out-quick`, no overshoot) and labels 150 ms;
+  - arrow keys, Home and End move the selection (radio-group pattern);
+  - labels may wrap between words (hyphenated if needed) and buttons may shrink;
+  - smaller labels below 360 px.
+- Typed values were already kept in the form state; unchanged. Weekdays and the weekly target survive switching; saving uses only the selected mode.
+
+### Verification
+- **Regression test** `src/components/ui.test.tsx › schedule selector`, in DE and EN:
+  - 36 clicks with no waiting; immediately afterwards: latest selection, one content block, one target field and no stale weekday buttons;
+  - weekly target and weekdays preserved;
+  - focus moves to the selected segment when the focused field disappears, and stays put while typing;
+  - the saved rule matches (`perWeek: 4`, all days).
+  - Against the previous implementation it fails: 7 stale weekday buttons.
+- **Chromium, foreground, about 164 fps:**
+  - 36 rapid clicks (DE): on the next frame after every click, the selection and the visible fields matched (0 mismatches); always one block; never two containers animating at once; settled 145 ms after the last click (was about 760 ms).
+  - Single switch: pill 170 ms (from the click), monotonic; height 152 ms; content animation 140 ms; blur at most 3 px; no filter at all at rest.
+  - EN:
+    - 36 real mouse clicks ended consistently;
+    - weekly target 5 and weekdays Mon/Wed/Fri survived switching;
+    - arrow keys move the selection, the fields follow, and focus stays on the segment;
+    - the saved IndexedDB rule matched (`perWeek: 5`, all days).
+  - Reduced motion (emulated): `switch-fade` only, no height transition.
+  - 320 px (DE and EN), 390 px and 1440 px: no horizontal overflow; labels wrap between words; target field 72 px.
+- `npm run typecheck` clean, `npm test` **85/85**, `npm run build` OK. The preview at `http://localhost:4173/` (the already-running server) serves the new build.
+- **Not verified:** real touch devices or Safari (the iOS no-focus-on-tap case was simulated with a programmatic click).
+
 ## Architecture (iteration 3)
 - `supabase/migrations/20261110000000_still_records.sql`:
   - a `public.records` table with RLS policies for select, insert, update and delete (owner only; `anon` revoked);
@@ -115,11 +212,45 @@ Still to verify manually:
 
 Alternatively, run `npx supabase start` with Docker for a local stack.
 
+## Validation results (iteration 4)
+- `npm run typecheck`: clean. `npm run build`: OK (650 kB JS, 193 kB gzip; Vite's >500 kB chunk hint).
+- `npm test`: **83/83 pass** (72 earlier plus 11 new).
+- **`src/lib/autosave.test.ts`** (real migration in PGlite):
+  - pending operations survive closing and reopening the database and are pushed afterwards;
+  - three failed offline attempts lose nothing, and the latest offline edit wins after reconnecting;
+  - a lost response is retried without duplicates or conflicts (server version stays 1);
+  - an edit made while a push is in flight stays queued and is pushed next. Mutation check: an unconditional acknowledgement fails this test;
+  - a failing local write stores neither the record nor its outbox entry;
+  - drafts survive reopening, are never counted and never queued, and are isolated per account.
+- **`src/components/ui.test.tsx`** (jsdom):
+  - Language: German by default; switching updates text, dates and `<html lang>` immediately and persists across a remount; date keys don't change.
+  - A language switch keeps typed values, the same input node and focus.
+  - The habit form restores the numeric target after switching modes. Rapid switching ends with exactly the selected mode's fields; the name field never remounts.
+  - A failing local write shows the save error with retry and stores nothing.
+- The earlier focus regression tests still pass.
+- **Browser (Playwright/Chromium, production build at `http://localhost:4173/`, Playwright's own profile, not signed in):**
+  - **1440 and 1920 px:**
+    - the dashboard is centered (offset −7 px, i.e. half the 15 px scrollbar);
+    - the ring is 256 px, and the list starts at 570 px in a 900 px window;
+    - the header shows the save status, DE/EN and "Anmelden"; no horizontal overflow.
+  - **320 and 390 px:** the header is hidden and none of its buttons are focusable; ring 148 px; no overflow; the mobile save status is visible.
+  - **DE → EN:** switched in the header. Every screen was scanned (Today, Week, Journal plus sheet, Statistics, Settings, habit sheet in Number and Analyses modes, both detail views, analysis sheet, login sheet with validation): no German interface words remained, only user content. `<html lang="en">` and English survived a reload; switched back to DE afterwards.
+  - **Motion at about 170 fps** (page brought to the front):
+    - the segmented pill moved monotonically over 32 frames in 291 ms, without overshoot (before the schedule-selector fix);
+    - the conditional field height grew 0 → 75 px over 41 frames (before the fix);
+    - blur was present only during the swap and gone at rest;
+    - five rapid mode switches ended with one content block per switch and no leftover fields; the typed name and focus survived.
+  - **Drafts:** a journal draft was saved after the pause, survived a reload, was not counted as an entry, came back with the "restored" notice, and "Entwurf verwerfen" removed it.
+  - **Focus:** typing 18 characters into the header's login form never lost focus.
+- **Not tested in this iteration:** login and logout with a real account. The header button was only exercised signed out (opening the login sheet); sign-out reuses the unchanged logout sheet. Also untested: sync status texts against the real backend, and all real devices.
+
 ## Not verified
 - **Cross-user isolation against the real project, manually.** It's covered only by the automated RLS tests against the migration (PGlite), plus the anonymous permission-denied checks above.
 - **Against the real project:** password reset, offline reconnect, conflict resolution, the local-data import, sign-out cache removal, and account switching.
 - **Real iPhone/Android devices** (keyboard behaviour, install, touch feel) and Safari. The two-session sync test ran in desktop browser windows only.
 - Screen readers beyond roles and labels.
+- **Smoothness on real devices:** all motion measurements come from desktop Chromium.
+- **English copy** was written here and not reviewed by a native speaker.
 
 ## Remaining / ideas
 - Sync uses polling; Supabase Realtime could push changes immediately.

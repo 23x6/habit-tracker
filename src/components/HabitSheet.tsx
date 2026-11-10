@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useT } from '../i18n';
 import { addDays, formatLong, startOfWeek, weekdayLong, weekdayOrder, weekdayShort } from '../lib/date';
 import { ICON_NAMES } from '../lib/icons';
 import { ALL_DAYS, latestRule, ruleAt, type Habit } from '../lib/model';
 import { useStore, type Draft, type ScheduleType } from '../store';
-import { Icon, Segmented, Sheet } from './ui';
+import { Icon, Segmented, Sheet, SwitchContent } from './ui';
 
 const blank = (today: string): Draft => ({
   name: '', description: '', icon: 'circle', kind: 'binary', unit: '', schedule: 'daily', days: ALL_DAYS, target: 1, perWeek: 3, multi: false, startDate: today, reminder: null,
@@ -18,29 +19,44 @@ function fromHabit(h: Habit): Draft {
   };
 }
 
+/**
+ * Create / edit a habit. Switching type or schedule keeps all typed values in the draft (so switching back
+ * restores them); validation and saving only use the fields of the selected mode (see the store).
+ */
 export function HabitSheet({ open, habit, onClose }: { open: boolean; habit: Habit | null; onClose: () => void }) {
+  const t = useT();
   const { today, settings, createHabit, updateHabit } = useStore();
   const [d, setD] = useState<Draft>(blank(today));
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Targets typed per type, so switching away and back restores them.
+  const [stash, setStash] = useState<Partial<Record<Habit['kind'], number>>>({});
+  // If a mode switch removes the focused field, focus goes to the selected segment of that switch.
+  const kindSeg = useRef<HTMLDivElement>(null);
+  const scheduleSeg = useRef<HTMLDivElement>(null);
+  const focusKind = useCallback(() => kindSeg.current?.querySelector<HTMLElement>('[aria-checked="true"]'), []);
+  const focusSchedule = useCallback(() => scheduleSeg.current?.querySelector<HTMLElement>('[aria-checked="true"]'), []);
 
   useEffect(() => {
     if (!open) return;
     setTouched(false);
+    setStash({});
     setD(habit ? fromHabit(habit) : blank(today));
   }, [open, habit, today]);
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => ({ ...x, [k]: v }));
   const analyses = d.kind === 'weekly';
   const frequency = d.kind === 'binary' && d.schedule === 'weekly';
+  // A numeric habit can't be "X times per week": show its schedule as daily without losing the stored choice.
+  const schedule: ScheduleType = d.kind !== 'binary' && d.schedule === 'weekly' ? 'daily' : d.schedule;
   const errors: Partial<Record<keyof Draft, string>> = {};
-  if (!d.name.trim()) errors.name = 'Bitte einen Namen eingeben.';
-  if (d.name.length > 80) errors.name = 'Höchstens 80 Zeichen.';
-  if (!analyses && d.schedule === 'days' && !d.days.length) errors.days = 'Mindestens einen Tag wählen.';
-  if (d.kind === 'numeric' && (!Number.isFinite(d.target) || d.target < 1 || d.target > 100000)) errors.target = 'Ziel zwischen 1 und 100 000.';
-  if (analyses && (!Number.isInteger(d.target) || d.target < 1 || d.target > 50)) errors.target = 'Wochenziel: ganze Zahl zwischen 1 und 50.';
-  if (frequency && (!Number.isInteger(d.perWeek) || d.perWeek < 1 || d.perWeek > 50)) errors.perWeek = 'Bitte eine ganze Zahl zwischen 1 und 50.';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.startDate)) errors.startDate = 'Bitte ein Datum wählen.';
+  if (!d.name.trim()) errors.name = t.sheet.errName;
+  if (d.name.length > 80) errors.name = t.sheet.errNameLong;
+  if (!analyses && schedule === 'days' && !d.days.length) errors.days = t.sheet.errDays;
+  if (d.kind === 'numeric' && (!Number.isFinite(d.target) || d.target < 1 || d.target > 100000)) errors.target = t.sheet.errTarget;
+  if (analyses && (!Number.isInteger(d.target) || d.target < 1 || d.target > 50)) errors.target = t.sheet.errAnalysesTarget;
+  if (frequency && (!Number.isInteger(d.perWeek) || d.perWeek < 1 || d.perWeek > 50)) errors.perWeek = t.sheet.errPerWeek;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.startDate)) errors.startDate = t.sheet.errDate;
   const valid = !Object.keys(errors).length;
 
   const save = async () => {
@@ -48,8 +64,9 @@ export function HabitSheet({ open, habit, onClose }: { open: boolean; habit: Hab
     if (!valid || saving) return;
     setSaving(true);
     try {
-      if (habit) await updateHabit(habit.id, d);
-      else await createHabit(d);
+      const out = { ...d, schedule };
+      if (habit) await updateHabit(habit.id, out);
+      else await createHabit(out);
       onClose();
     } catch {
       /* toast already shown; keep sheet open so input isn't lost */
@@ -67,47 +84,43 @@ export function HabitSheet({ open, habit, onClose }: { open: boolean; habit: Hab
     const cur = ruleAt(habit, today);
     const was = fromHabit({ ...habit, rules: [cur] });
     const changed =
-      was.schedule !== d.schedule ||
+      was.schedule !== schedule ||
       (analyses ? was.target !== d.target : frequency ? was.perWeek !== d.perWeek || was.multi !== d.multi : was.target !== d.target || was.days.join() !== [...d.days].sort((a, b) => a - b).join());
     const weeklyInvolved = analyses || frequency || cur.perWeek != null;
-    if (changed)
-      effectNote = weeklyInvolved
-        ? `Gilt ab ${formatLong(nextWeek)} (nächste Woche). Die laufende Woche und frühere Wochen behalten ihr Ziel.`
-        : 'Gilt ab heute. Vergangene Tage behalten ihre bisherigen Regeln.';
-    else if (latestRule(habit).from > today) effectNote = `Geplante Änderung gilt ab ${formatLong(latestRule(habit).from)}.`;
+    if (changed) effectNote = weeklyInvolved ? t.sheet.effectNextWeek(formatLong(nextWeek)) : t.sheet.effectToday;
+    else if (latestRule(habit).from > today) effectNote = t.sheet.effectPlanned(formatLong(latestRule(habit).from));
   }
-  const kindLabel = { binary: 'Erledigt / offen', numeric: 'Zahlenwert', weekly: 'Analysen pro Woche' }[d.kind];
 
   return (
     <Sheet
       open={open}
       onClose={onClose}
-      title={habit ? 'Gewohnheit bearbeiten' : 'Neue Gewohnheit'}
+      title={habit ? t.sheet.editHabit : t.sheet.newHabit}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Abbrechen</button>
+          <button className="btn" onClick={onClose}>{t.common.cancel}</button>
           <button className="btn primary" onClick={save} disabled={saving}>
-            {habit ? 'Sichern' : 'Erstellen'}
+            {habit ? t.common.save : t.sheet.create}
           </button>
         </>
       }
     >
       <form className="form" onSubmit={(e) => (e.preventDefault(), save())} noValidate>
         <label className="field">
-          <span>Name</span>
-          <input value={d.name} onChange={(e) => set('name', e.target.value)} maxLength={80} placeholder="z. B. Sport machen" autoComplete="off" aria-invalid={touched && !!errors.name} enterKeyHint="done" />
+          <span>{t.sheet.name}</span>
+          <input value={d.name} onChange={(e) => set('name', e.target.value)} maxLength={80} placeholder={t.sheet.namePlaceholder} autoComplete="off" aria-invalid={touched && !!errors.name} enterKeyHint="done" />
           {err('name')}
         </label>
         <label className="field">
-          <span>Beschreibung <em>optional</em></span>
+          <span>{t.sheet.description} <em>{t.common.optional}</em></span>
           <textarea value={d.description} onChange={(e) => set('description', e.target.value)} rows={2} maxLength={300} />
         </label>
 
         <fieldset className="field">
-          <legend>Symbol</legend>
-          <div className="icon-grid" role="radiogroup" aria-label="Symbol">
+          <legend>{t.sheet.icon}</legend>
+          <div className="icon-grid" role="radiogroup" aria-label={t.sheet.icon}>
             {ICON_NAMES.map((n) => (
-              <button type="button" key={n} role="radio" aria-checked={d.icon === n} aria-label={n} className={'icon-choice' + (d.icon === n ? ' on' : '')} onClick={() => set('icon', n)}>
+              <button type="button" key={n} role="radio" aria-checked={d.icon === n} aria-label={t.sheet.iconNames[n] ?? n} className={'icon-choice' + (d.icon === n ? ' on' : '')} onClick={() => set('icon', n)}>
                 <Icon habit={n} />
               </button>
             ))}
@@ -115,104 +128,120 @@ export function HabitSheet({ open, habit, onClose }: { open: boolean; habit: Hab
         </fieldset>
 
         <div className="field">
-          <span className="label">Erfassung</span>
+          <span className="label">{t.sheet.tracking}</span>
           {habit ? (
-            <p className="muted small">{kindLabel} · Der Typ ist nach dem Erstellen fest, damit der Verlauf stimmig bleibt.</p>
+            <p className="muted small">{t.sheet.kindFixed(t.sheet.kindLabel[d.kind])}</p>
           ) : (
+            <div ref={kindSeg}>
             <Segmented
-              label="Erfassung"
+              label={t.sheet.tracking}
               value={d.kind}
-              onChange={(v) => setD((x) => ({ ...x, kind: v, target: v === 'weekly' ? 2 : v === 'binary' ? 1 : x.target, schedule: v !== 'binary' && x.schedule === 'weekly' ? 'daily' : x.schedule }))}
-              options={[{ value: 'binary', label: 'Erledigt' }, { value: 'numeric', label: 'Zahlenwert' }, { value: 'weekly', label: 'Analysen' }]}
+              onChange={(v) => {
+                const next = { ...stash, [d.kind]: d.target };
+                setStash(next);
+                setD((x) => ({ ...x, kind: v, target: next[v] ?? (v === 'weekly' ? 2 : 1) }));
+              }}
+              options={[{ value: 'binary', label: t.sheet.kindBinary }, { value: 'numeric', label: t.sheet.kindNumeric }, { value: 'weekly', label: t.sheet.kindAnalyses }]}
             />
+            </div>
           )}
-          {analyses && <p className="muted small">Jede gespeicherte Analyse (Titel und Erkenntnisse) zählt einmal zum Wochenziel. Mehrere pro Tag sind möglich.</p>}
         </div>
 
-        {d.kind === 'numeric' && (
-          <div className="field-row">
-            <label className="field">
-              <span>Tagesziel</span>
-              <input type="number" inputMode="decimal" min={1} max={100000} value={Number.isFinite(d.target) ? d.target : ''} onChange={(e) => set('target', e.target.valueAsNumber)} aria-invalid={touched && !!errors.target} />
-              {err('target')}
-            </label>
-            <label className="field">
-              <span>Einheit</span>
-              <input value={d.unit} onChange={(e) => set('unit', e.target.value)} maxLength={30} placeholder="Minuten, Seiten, Gläser" list="units" />
-              <datalist id="units"><option value="Minuten" /><option value="Seiten" /><option value="Gläser" /><option value="Schritte" /><option value="km" /></datalist>
-            </label>
-          </div>
-        )}
+        <SwitchContent id={d.kind === 'numeric' ? 'numeric' : 'none'} focusFallback={focusKind}>
+          {d.kind === 'numeric' && (
+            <div className="field-row">
+              <label className="field">
+                <span>{t.sheet.dailyTarget}</span>
+                <input type="number" inputMode="decimal" min={1} max={100000} value={Number.isFinite(d.target) ? d.target : ''} onChange={(e) => set('target', e.target.valueAsNumber)} aria-invalid={touched && !!errors.target} />
+                {err('target')}
+              </label>
+              <label className="field">
+                <span>{t.sheet.unit}</span>
+                <input value={d.unit} onChange={(e) => set('unit', e.target.value)} maxLength={30} placeholder={t.sheet.unitPlaceholder} list="units" />
+                <datalist id="units">{t.sheet.units.map((u) => <option key={u} value={u} />)}</datalist>
+              </label>
+            </div>
+          )}
+        </SwitchContent>
 
-        {analyses ? (
-          <label className="field">
-            <span>Analysen pro Woche</span>
-            <input type="number" inputMode="numeric" min={1} max={50} step={1} value={Number.isFinite(d.target) ? d.target : ''} onChange={(e) => set('target', e.target.valueAsNumber)} aria-invalid={touched && !!errors.target} />
-            {err('target')}
-          </label>
-        ) : (
-          <fieldset className="field">
-            <legend>Zeitplan</legend>
-            <Segmented<ScheduleType>
-              label="Zeitplan"
-              value={d.schedule}
-              onChange={(v) => setD((x) => ({ ...x, schedule: v, days: v === 'days' && x.days.length === 7 ? [1, 2, 3, 4, 5] : x.days }))}
-              options={[
-                { value: 'daily', label: 'Täglich' },
-                { value: 'days', label: 'Wochentage' },
-                ...(d.kind === 'binary' ? [{ value: 'weekly' as const, label: 'X-mal pro Woche' }] : []),
-              ]}
-            />
-            {d.schedule === 'days' && (
-              <div className="day-picks">
-                {weekdayOrder(settings.weekStart).map((wd) => {
-                  const on = d.days.includes(wd);
-                  return (
-                    <button type="button" key={wd} aria-pressed={on} aria-label={weekdayLong(wd)} className={'day-pick' + (on ? ' on' : '')} onClick={() => set('days', on ? d.days.filter((x) => x !== wd) : [...d.days, wd])}>
-                      {weekdayShort(wd).slice(0, 2)}
-                    </button>
-                  );
-                })}
+        <SwitchContent id={analyses ? 'analyses' : 'schedule'} focusFallback={focusKind}>
+          {analyses ? (
+            <div className="form">
+              <p className="muted small">{t.sheet.analysesHint}</p>
+              <label className="field">
+                <span>{t.sheet.analysesPerWeek}</span>
+                <input type="number" inputMode="numeric" min={1} max={50} step={1} value={Number.isFinite(d.target) ? d.target : ''} onChange={(e) => set('target', e.target.valueAsNumber)} aria-invalid={touched && !!errors.target} />
+                {err('target')}
+              </label>
+            </div>
+          ) : (
+            <fieldset className="field">
+              <legend>{t.sheet.schedule}</legend>
+              <div ref={scheduleSeg}>
+              <Segmented<ScheduleType>
+                label={t.sheet.schedule}
+                value={schedule}
+                onChange={(v) => setD((x) => ({ ...x, schedule: v, days: v === 'days' && x.days.length === 7 ? [1, 2, 3, 4, 5] : x.days }))}
+                options={[
+                  { value: 'daily', label: t.sheet.daily },
+                  { value: 'days', label: t.sheet.weekdays },
+                  ...(d.kind === 'binary' ? [{ value: 'weekly' as const, label: t.sheet.perWeek }] : []),
+                ]}
+              />
               </div>
-            )}
-            {err('days')}
-            {frequency && (
-              <>
-                <label className="field">
-                  <span>Wie oft pro Woche?</span>
-                  <div className="inline">
-                    <input type="number" inputMode="numeric" min={1} max={50} step={1} value={Number.isFinite(d.perWeek) ? d.perWeek : ''} onChange={(e) => set('perWeek', e.target.valueAsNumber)} aria-invalid={touched && !!errors.perWeek} className="num-small" />
-                    <span className="muted">-mal pro Woche, an beliebigen Tagen</span>
+              <SwitchContent id={schedule} focusFallback={focusSchedule}>
+                {schedule === 'days' && (
+                  <div className="day-picks">
+                    {weekdayOrder(settings.weekStart).map((wd) => {
+                      const on = d.days.includes(wd);
+                      return (
+                        <button type="button" key={wd} aria-pressed={on} aria-label={weekdayLong(wd)} className={'day-pick' + (on ? ' on' : '')} onClick={() => set('days', on ? d.days.filter((x) => x !== wd) : [...d.days, wd])}>
+                          {weekdayShort(wd).slice(0, 2)}
+                        </button>
+                      );
+                    })}
                   </div>
-                  {err('perWeek')}
-                </label>
-                <label className="switch-row">
-                  <span>Mehrere Erledigungen pro Tag erlauben</span>
-                  <input type="checkbox" role="switch" checked={d.multi} onChange={(e) => set('multi', e.target.checked)} />
-                </label>
-              </>
-            )}
-          </fieldset>
-        )}
+                )}
+                {frequency && (
+                  <div className="form switch-pad">
+                    <label className="field">
+                      <span>{t.sheet.howOften}</span>
+                      <div className="inline">
+                        <input type="number" inputMode="numeric" min={1} max={50} step={1} value={Number.isFinite(d.perWeek) ? d.perWeek : ''} onChange={(e) => set('perWeek', e.target.valueAsNumber)} aria-invalid={touched && !!errors.perWeek} className="num-small" />
+                        <span className="muted">{t.sheet.perWeekSuffix}</span>
+                      </div>
+                      {err('perWeek')}
+                    </label>
+                    <label className="switch-row">
+                      <span>{t.sheet.multi}</span>
+                      <input type="checkbox" role="switch" checked={d.multi} onChange={(e) => set('multi', e.target.checked)} />
+                    </label>
+                  </div>
+                )}
+              </SwitchContent>
+              {err('days')}
+            </fieldset>
+          )}
+        </SwitchContent>
         {effectNote && <p className="effect-note" role="status">{effectNote}</p>}
 
         <div className="field-row">
           <label className="field">
-            <span>Beginn</span>
+            <span>{t.sheet.start}</span>
             <input type="date" value={d.startDate} onChange={(e) => set('startDate', e.target.value)} aria-invalid={touched && !!errors.startDate} />
             {err('startDate')}
           </label>
           {!analyses && (
             <label className="field">
-              <span>Erinnerung <em>optional</em></span>
+              <span>{t.sheet.reminder} <em>{t.common.optional}</em></span>
               <div className="inline">
                 <input type="time" value={d.reminder ?? ''} onChange={(e) => set('reminder', e.target.value || null)} />
-                {d.reminder && <button type="button" className="icon-btn" aria-label="Erinnerung entfernen" onClick={() => set('reminder', null)}><Icon name="close" size={18} /></button>}
+                {d.reminder && <button type="button" className="icon-btn" aria-label={t.sheet.removeReminder} onClick={() => set('reminder', null)}><Icon name="close" size={18} /></button>}
               </div>
             </label>
           )}
         </div>
-        {d.reminder && !analyses && <p className="muted small">Erinnerungen erscheinen nur, solange Still geöffnet ist. Details unter Einstellungen.</p>}
+        {d.reminder && !analyses && <p className="muted small">{t.sheet.reminderNote}</p>}
         <button type="submit" hidden />
       </form>
     </Sheet>

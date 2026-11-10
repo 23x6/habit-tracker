@@ -1,3 +1,4 @@
+import { de, type Messages } from '../i18n/messages';
 import { accountDbName, LOCAL_DB } from './db';
 
 // Pure authentication state handling (Supabase Auth events → app state). Kept free of React and network
@@ -34,28 +35,33 @@ export function partitionFor(state: AuthState): { name: string; sync: boolean; u
 export const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s.trim());
 export const MIN_PASSWORD = 8;
 
-export function credentialErrors(email: string, password: string | null, confirm?: string): Partial<Record<'email' | 'password' | 'confirm', string>> {
+export function credentialErrors(email: string, password: string | null, confirm?: string, m: Messages = de): Partial<Record<'email' | 'password' | 'confirm', string>> {
+  const t = m.auth;
   const e: Partial<Record<'email' | 'password' | 'confirm', string>> = {};
-  if (!email.trim()) e.email = 'Bitte deine E-Mail-Adresse eingeben.';
-  else if (!isEmail(email)) e.email = 'Diese E-Mail-Adresse sieht ungültig aus.';
+  if (!email.trim()) e.email = t.errEmail;
+  else if (!isEmail(email)) e.email = t.errEmailInvalid;
   if (password !== null) {
-    if (!password) e.password = 'Bitte ein Passwort eingeben.';
-    else if (password.length < MIN_PASSWORD) e.password = `Mindestens ${MIN_PASSWORD} Zeichen.`;
-    if (confirm !== undefined && confirm !== password) e.confirm = 'Die Passwörter stimmen nicht überein.';
+    if (!password) e.password = t.errPassword;
+    else if (password.length < MIN_PASSWORD) e.password = t.errPasswordShort(MIN_PASSWORD);
+    if (confirm !== undefined && confirm !== password) e.confirm = t.errConfirm;
   }
   return e;
 }
 
-/** Supabase Auth errors in plain German. */
-export function authErrorText(err: { code?: string; message?: string; status?: number } | null | undefined): string {
+export const isUnconfirmedError = (err: { code?: string; message?: string } | null | undefined) =>
+  err?.code === 'email_not_confirmed' || /email not confirmed/i.test(err?.message ?? '');
+
+/** Supabase Auth errors in plain language. */
+export function authErrorText(err: { code?: string; message?: string; status?: number } | null | undefined, m: Messages = de): string {
+  const t = m.auth;
   const code = err?.code ?? '';
   const msg = err?.message ?? '';
-  if (code === 'invalid_credentials' || /invalid login credentials/i.test(msg)) return 'E-Mail oder Passwort ist falsch.';
-  if (code === 'email_not_confirmed' || /email not confirmed/i.test(msg)) return 'Bitte bestätige zuerst deine E-Mail-Adresse über den Link in deinem Postfach.';
-  if (code === 'user_already_exists' || /already registered/i.test(msg)) return 'Für diese E-Mail-Adresse gibt es bereits ein Konto.';
-  if (code === 'weak_password' || /password should/i.test(msg)) return `Das Passwort ist zu schwach. Verwende mindestens ${MIN_PASSWORD} Zeichen.`;
-  if (code.startsWith('over_') || err?.status === 429) return 'Zu viele Versuche. Bitte warte einen Moment.';
-  if (code === 'same_password') return 'Das neue Passwort muss sich vom alten unterscheiden.';
-  if (/fetch|network|load failed/i.test(msg)) return 'Keine Verbindung zum Server. Prüfe deine Internetverbindung.';
-  return msg ? `Etwas ist schiefgelaufen: ${msg}` : 'Etwas ist schiefgelaufen. Bitte versuche es erneut.';
+  if (code === 'invalid_credentials' || /invalid login credentials/i.test(msg)) return t.errInvalid;
+  if (isUnconfirmedError(err)) return t.errUnconfirmed;
+  if (code === 'user_already_exists' || /already registered/i.test(msg)) return t.errExists;
+  if (code === 'weak_password' || /password should/i.test(msg)) return t.errWeak(MIN_PASSWORD);
+  if (code.startsWith('over_') || err?.status === 429) return t.errRate;
+  if (code === 'same_password') return t.errSame;
+  if (/fetch|network|load failed/i.test(msg)) return t.errNetwork;
+  return t.errGeneric(msg);
 }

@@ -1,6 +1,6 @@
 # Still
 
-A calm, dark-gray habit tracker with weekly goals, a journal and optional cross-device sync. Installable, offline-first PWA built with React and TypeScript. German interface; works on iPhone, Android, macOS and Windows.
+A calm, dark-gray habit tracker with weekly goals, a journal and optional cross-device sync. Installable, offline-first PWA built with React and TypeScript. German or English interface (German by default); works on iPhone, Android, macOS and Windows.
 
 Still works fully **without an account** (local mode: data only in this browser). With a **Supabase** backend configured, users can register, sign in and sync their data between devices.
 
@@ -62,6 +62,7 @@ To test without the cloud, `npx supabase start` runs a complete local stack, inc
   - Target and schedule changes for weekly goals apply **from next week**, and the form shows the date. Daily changes apply from today.
   - History is never rewritten. Switching an existing habit between daily and weekly keeps its history.
 - **Dashboard ring:**
+  - **Placement:** on phones a compact stacked card below the date (ring about 150 px). From 768 px a large dashboard sits centered at the top of the content (ring 224 px, 256 px from 1200 px), with the date navigation and list below it.
   - **Heute:** only daily habits scheduled that day, one equal share each, e.g. "Heute · 3 von 4 erledigt".
   - **Woche:** only weekly goals; the mean of each goal's progress, capped at 100% per goal. Cards still show real counts such as "3 von 2".
   - **No goals:** an empty state, never 100%.
@@ -71,15 +72,41 @@ To test without the cloud, `npx supabase start` runs a complete local stack, inc
   - The timeline is grouped by date; entries can be edited and deleted with confirmation and undo.
   - Journal entries never complete a habit.
 - **Details and statistics:** daily streaks and rates, a calendar for daily habits, and weekly streaks and achieved weeks for weekly goals. Daily and weekly statistics are kept strictly separate.
-- **Account (Settings):** Anmelden (sign in), Registrieren (register, with email confirmation), Passwort vergessen (password reset by link), Abmelden (sign out), and a sync status badge ("Synchronisiert", "Offline", "Synchronisierung ausstehend", or the number of conflicts).
+- **Account (Settings):** Anmelden (sign in), Registrieren (register, with email confirmation), Passwort vergessen (password reset by link), Abmelden (sign out), and the save status (see "Saving and sync").
   - Signing out only affects this device. It can also remove this account's local copy; that option is off by default while changes are still waiting to upload.
+- **Header (≥ 768 px):** save status on the left; a compact DE / EN switch and a Log in / Log out button on the right, using the same sheets as Settings. Below 768 px the header is hidden entirely (not focusable), and language and account live in Settings.
+- **Language (DE / EN):**
+  - All interface text comes from central dictionaries (`src/i18n/messages.ts`). Dates, weekdays and numbers follow the language.
+  - German is the default. The choice is stored per device (`localStorage`) and applies immediately, without reloading; forms keep their content and focus.
+  - Your own content (habit names, journal text, article titles, units) is never translated. The language never affects stored data, date keys, week start or calculations.
 - **Motion:**
   - Consistent springs and interruptible animations.
+  - Segmented controls: the selection slides in about 160 ms without overshoot; arrow keys move the selection. Fields that depend on the selected mode appear at once with a 140 ms fade, 4 px of travel and a brief 3 px blur on that content only, while only that area's height animates (140 ms). The previous fields disappear immediately, so rapid clicks always end on the latest selection.
   - Tabs cross-fade without waiting for the old screen to finish.
   - Rows glide into place when the list changes, and swipes settle with the finger's momentum.
   - Velocity blur appears only on moving elements; content at rest is sharp.
   - Reduced motion removes blur, glow, pulses and large movements.
-- **Layout:** phone-first. On wide screens the date column and dashboard sit next to the list. Sheets move up above the on-screen keyboard (`visualViewport`).
+- **Layout:** phone-first. On wide screens the content is up to 1160 px wide, with the list column centered under the dashboard. Sheets move up above the on-screen keyboard (`visualViewport`).
+
+## Saving and sync
+
+- **Every confirmed change is saved immediately in this browser:** check-offs, edits, settings, journal entries and analyses.
+  - The changed record and its pending sync operation are written in **one IndexedDB transaction**: either both are stored or neither.
+  - The status shows "Wird gespeichert …" only while that transaction runs.
+  - If a write fails, nothing is stored and the status offers "Erneut speichern".
+- **Account mode:**
+  - After a change the status reads "Lokal gespeichert · Synchronisierung ausstehend" until the server confirms, then "Synchronisiert".
+  - Sync starts automatically about 1 s after a change (quick changes are batched; saving locally is never delayed). It also runs on app start, when the connection returns, when the window regains focus or becomes visible, and every 30 s.
+  - "Jetzt synchronisieren" is only a manual fallback.
+- **The upload queue lives in IndexedDB,** so it survives reloads, closing the browser and crashes. Retries are idempotent.
+  - An edit made while an older upload is still in flight stays queued; the older acknowledgement never removes it.
+- **Drafts:** unfinished journal and analysis text is saved as a draft after a short typing pause (about 0.7 s), when a field loses focus, and when the form closes. The draft is offered again when you reopen the form, even after restarting the app.
+  - Drafts stay on this device in the account's own local database. They are never synced and never count as entries or analyses.
+  - Saving explicitly writes immediately and removes the draft.
+- **Honest limits:**
+  - Only changes that were committed locally can survive a crash; text typed in the last moment before the debounce or a blur may be lost.
+  - Changes that haven't synced yet exist only in this browser's storage on this device.
+  - Nothing relies on `beforeunload` or a last-second network request.
 
 ## Data and sync
 

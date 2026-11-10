@@ -1,10 +1,11 @@
 import { animate, motion, useMotionValue, useTransform } from 'framer-motion';
 import { useEffect, useId, useRef, useState } from 'react';
+import { useT } from '../i18n';
 import { addDays, formatShort, startOfWeek, type DateKey } from '../lib/date';
 import { dayProgress, percent, shouldCelebrate, weekProgress, type Progress } from '../lib/dashboard';
 import { weekEnd } from '../lib/weekly';
 import { useStore } from '../store';
-import { Segmented, useReduce } from './ui';
+import { Segmented, SwitchContent, useReduce } from './ui';
 
 type Mode = 'day' | 'week';
 const MODE_KEY = 'still-dashboard-mode';
@@ -16,8 +17,9 @@ const readMode = (): Mode => {
   }
 };
 
-/** Compact home dashboard: "Heute / Woche" switch, glowing progress ring, clear caption. */
+/** Home dashboard: "Today / Week" switch, large glowing progress ring, concise caption. */
 export function Dashboard({ date }: { date: DateKey }) {
+  const t = useT();
   const { habits, getEntry, analyses, completions, settings, today } = useStore();
   const [mode, setModeState] = useState<Mode>(readMode);
   const setMode = (m: Mode) => {
@@ -30,34 +32,27 @@ export function Dashboard({ date }: { date: DateKey }) {
   const p: Progress = mode === 'day' ? dayProgress(habits, getEntry, date) : weekProgress(habits, analyses, completions, ws);
   const pc = percent(p.ratio);
 
-  const dayName = date === today ? 'Heute' : date === addDays(today, -1) ? 'Gestern' : formatShort(date);
-  const weekName = ws === startOfWeek(today, settings.weekStart) ? 'Diese Woche' : `${formatShort(ws)} – ${formatShort(weekEnd(ws))}`;
+  const dayName = date === today ? t.common.today : date === addDays(today, -1) ? t.common.yesterday : formatShort(date);
+  const weekName = ws === startOfWeek(today, settings.weekStart) ? t.common.thisWeek : `${formatShort(ws)} – ${formatShort(weekEnd(ws))}`;
   const caption =
     p.ratio == null
-      ? mode === 'day'
-        ? `${dayName} · keine täglichen Gewohnheiten geplant`
-        : `${weekName} · keine Wochenziele`
-      : mode === 'day'
-        ? `${dayName} · ${p.done} von ${p.total} erledigt`
-        : `${weekName} · ${p.done} von ${p.total} ${p.total === 1 ? 'Ziel' : 'Zielen'} erreicht`;
-  const hint =
-    p.ratio == null
-      ? mode === 'day'
-        ? 'Wochenziele findest du unter „Woche".'
-        : 'Lege eine Gewohnheit mit „X-mal pro Woche" an oder nutze Analysen.'
-      : mode === 'week'
-        ? 'Durchschnitt aller Wochenziele, jedes höchstens 100 %.'
-        : null;
+      ? mode === 'day' ? t.dash.noDaily(dayName) : t.dash.noWeekly(weekName)
+      : mode === 'day' ? t.dash.dayCaption(dayName, p.done, p.total) : t.dash.weekCaption(weekName, p.done, p.total);
+  const hint = p.ratio == null ? (mode === 'day' ? t.dash.hintNoDaily : t.dash.hintNoWeekly) : mode === 'week' ? t.dash.hintWeek : null;
 
   return (
-    <section className="card dashboard" aria-label="Fortschritt">
-      <Segmented<Mode> label="Zeitraum des Fortschritts" value={mode} onChange={setMode} options={[{ value: 'day', label: 'Heute' }, { value: 'week', label: 'Woche' }]} />
+    <section className="card dashboard" aria-label={t.dash.region}>
+      <div className="dash-switch">
+        <Segmented<Mode> label={t.dash.period} value={mode} onChange={setMode} options={[{ value: 'day', label: t.dash.day }, { value: 'week', label: t.dash.week }]} />
+      </div>
       <div className="dash-body">
-        <GlowRing ratio={p.ratio} ringKey={`${mode}|${mode === 'day' ? date : ws}`} label={`${caption}${pc != null ? `, ${pc} Prozent` : ''}`} />
-        <div className="dash-text">
-          <p className="dash-caption" aria-live="polite">{caption}</p>
-          {hint && <p className="muted small">{hint}</p>}
-        </div>
+        <GlowRing ratio={p.ratio} ringKey={`${mode}|${mode === 'day' ? date : ws}`} label={`${caption}${pc != null ? `, ${pc} ${t.common.percentWord}` : ''}`} />
+        <SwitchContent id={mode}>
+          <div className="dash-text">
+            <p className="dash-caption" aria-live="polite">{caption}</p>
+            {hint && <p className="muted small">{hint}</p>}
+          </div>
+        </SwitchContent>
       </div>
     </section>
   );
@@ -107,7 +102,8 @@ function GlowRing({ ratio, ringKey, label }: { ratio: number | null; ringKey: st
 
   return (
     <motion.figure className="ring-figure" role="img" aria-label={label} style={{ scale }}>
-      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true">
+      {/* Sized by CSS (.ring-figure); the viewBox keeps stroke and glow proportional at any size. */}
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true">
         <defs>
           <linearGradient id={`g${id}`} x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stopColor="#f4f4f2" />

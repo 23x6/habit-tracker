@@ -2,7 +2,8 @@ import { animate, AnimatePresence, motion, Reorder, useDragControls, useMotionVa
 import { useEffect, useMemo, useState } from 'react';
 import { AnalysisSheet } from '../components/AnalysisSheet';
 import { HabitRow } from '../components/HabitRow';
-import { SyncBadge } from '../components/Account';
+import { SaveStatus } from '../components/Account';
+import { useT } from '../i18n';
 import { Dashboard } from '../components/Dashboard';
 import { Icon, Sheet, springs, useReduce, useSwipeBlur } from '../components/ui';
 import { addDays, formatDayMonth, formatLong, fromKey, startOfWeek, weekday, weekdayLong, weekdayShort, type DateKey } from '../lib/date';
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export function Today({ date, setDate, onCreate, onEdit, onOpen }: Props) {
+  const t = useT();
   const { habits, today, getEntry, reorder, addExamples } = useStore();
   const [analysisFor, setAnalysisFor] = useState<Habit | null>(null);
   const reduce = useReduce();
@@ -62,20 +64,20 @@ export function Today({ date, setDate, onCreate, onEdit, onOpen }: Props) {
 
   return (
     <div className="screen today-screen">
-      <div className="today-side">
+      {active.length > 0 && <Dashboard date={date} />}
       <header className="today-head">
         <div className="head-top">
-          <SyncBadge />
+          <span className="mobile-only"><SaveStatus /></span>
           <div className="head-actions">
             {date !== today && (
-              <button className="pill" onClick={() => go(today)}>Heute</button>
+              <button className="pill" onClick={() => go(today)}>{t.common.today}</button>
             )}
             {active.length > 1 && (
-              <button className={'icon-btn' + (sorting ? ' active' : '')} onClick={() => setSorting((s) => !s)} aria-pressed={sorting} aria-label={sorting ? 'Sortieren beenden' : 'Reihenfolge ändern'}>
+              <button className={'icon-btn' + (sorting ? ' active' : '')} onClick={() => setSorting((s) => !s)} aria-pressed={sorting} aria-label={sorting ? t.today.sortEnd : t.today.sortStart}>
                 <Icon name={sorting ? 'check' : 'sort'} />
               </button>
             )}
-            <button className="icon-btn" onClick={onCreate} aria-label="Neue Gewohnheit">
+            <button className="icon-btn" onClick={onCreate} aria-label={t.today.newHabit}>
               <Icon name="plus" />
             </button>
           </div>
@@ -93,7 +95,7 @@ export function Today({ date, setDate, onCreate, onEdit, onOpen }: Props) {
         >
           {hblur.filter}
           <div className="date-title">
-            <p className="eyebrow">{(date === today ? 'Heute · ' : date === addDays(today, -1) ? 'Gestern · ' : '') + weekdayLong(weekday(date))}</p>
+            <p className="eyebrow">{(date === today ? `${t.common.today} · ` : date === addDays(today, -1) ? `${t.common.yesterday} · ` : '') + weekdayLong(weekday(date))}</p>
             <AnimatePresence mode="popLayout" initial={false} custom={dir}>
               <motion.h1
                 key={date}
@@ -111,15 +113,13 @@ export function Today({ date, setDate, onCreate, onEdit, onOpen }: Props) {
 
         <WeekStrip date={date} go={go} />
       </header>
-      {active.length > 0 && <Dashboard date={date} />}
-      </div>
 
       <div className="today-main">
       <AnimatePresence mode="popLayout" initial={false} custom={dir}>
         <motion.section
           key={date + (sorting ? 's' : '')}
           className="list"
-          aria-label="Gewohnheiten"
+          aria-label={t.today.habits}
           custom={dir}
           initial={reduce ? { opacity: 0 } : { opacity: 0, x: dir * 36, filter: dir ? 'blur(6px)' : 'blur(0px)' }}
           animate={{ opacity: 1, x: 0, filter: 'blur(0px)', transitionEnd: { filter: 'none' } }}
@@ -130,7 +130,7 @@ export function Today({ date, setDate, onCreate, onEdit, onOpen }: Props) {
             <Empty onCreate={onCreate} onExamples={addExamples} />
           ) : shown.length === 0 ? (
             <div className="empty small">
-              <p>Für {date === today ? 'heute' : 'diesen Tag'} ist nichts geplant.</p>
+              <p>{t.today.nothingPlanned(date === today)}</p>
             </div>
           ) : sorting ? (
             <Reorder.Group axis="y" values={order} onReorder={setOrder} className="rows" as="div">
@@ -157,20 +157,20 @@ export function Today({ date, setDate, onCreate, onEdit, onOpen }: Props) {
               </AnimatePresence>
             </div>
           )}
-          {sorting && <p className="hint">Am Griff ziehen oder mit den Pfeiltasten verschieben.</p>}
+          {sorting && <p className="hint">{t.today.sortHint}</p>}
 
           <AnimatePresence>
             {allDone && !sorting && (
               <motion.div className="all-done" initial={reduce ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0 }} transition={{ ...springs.gentle, delay: 0.15 }}>
                 <span className="done-mark"><Icon name="check" size={16} /></span>
-                {date === today ? 'Alles erledigt für heute.' : 'Alles erledigt.'}
+                {t.today.allDone(date === today)}
               </motion.div>
             )}
           </AnimatePresence>
 
           {archived.length > 0 && (
             <button className="link-btn" onClick={() => setArchiveOpen(true)}>
-              <Icon name="archive" size={18} /> Archiv · {archived.length}
+              <Icon name="archive" size={18} /> {t.today.archive(archived.length)}
             </button>
           )}
         </motion.section>
@@ -179,7 +179,7 @@ export function Today({ date, setDate, onCreate, onEdit, onOpen }: Props) {
 
       {analysisFor && <AnalysisSheet open habit={analysisFor} analysis={null} onClose={() => setAnalysisFor(null)} />}
 
-      <Sheet open={archiveOpen} onClose={() => setArchiveOpen(false)} title="Archiv">
+      <Sheet open={archiveOpen} onClose={() => setArchiveOpen(false)} title={t.today.archiveTitle}>
         <ArchiveList habits={archived} onOpen={(h) => (setArchiveOpen(false), onOpen(h))} />
       </Sheet>
     </div>
@@ -196,8 +196,9 @@ function SortableRow({ id, habit, date, onDrop, onMove }: { id: string; habit: H
 }
 
 export function ArchiveList({ habits, onOpen }: { habits: Habit[]; onOpen: (h: Habit) => void }) {
+  const t = useT();
   const { setArchived } = useStore();
-  if (!habits.length) return <p className="muted">Keine archivierten Gewohnheiten.</p>;
+  if (!habits.length) return <p className="muted">{t.today.noArchived}</p>;
   return (
     <ul className="plain-list">
       {habits.map((h) => (
@@ -207,7 +208,7 @@ export function ArchiveList({ habits, onOpen }: { habits: Habit[]; onOpen: (h: H
             <span>{h.name}</span>
           </button>
           <button className="btn small" onClick={() => setArchived(h.id, false)}>
-            Wiederherstellen
+            {t.common.restore}
           </button>
         </li>
       ))}
@@ -216,18 +217,20 @@ export function ArchiveList({ habits, onOpen }: { habits: Habit[]; onOpen: (h: H
 }
 
 function Empty({ onCreate, onExamples }: { onCreate: () => void; onExamples: () => void }) {
+  const t = useT();
   return (
     <div className="empty">
       <div className="empty-mark" aria-hidden="true"><Icon habit="circle" size={28} /></div>
-      <h2>Noch keine Gewohnheiten</h2>
-      <p>Beginne mit einer einzigen, kleinen Sache, die du täglich tun möchtest.</p>
-      <button className="btn primary" onClick={onCreate}>Gewohnheit anlegen</button>
-      <button className="link-btn" onClick={onExamples}>Beispielgewohnheiten hinzufügen</button>
+      <h2>{t.today.emptyTitle}</h2>
+      <p>{t.today.emptyText}</p>
+      <button className="btn primary" onClick={onCreate}>{t.today.emptyCreate}</button>
+      <button className="link-btn" onClick={onExamples}>{t.today.addExamples}</button>
     </div>
   );
 }
 
 function WeekStrip({ date, go }: { date: DateKey; go: (d: DateKey) => void }) {
+  const t = useT();
   const { settings, today, habits, getEntry } = useStore();
   const reduce = useReduce();
   const x = useMotionValue(0);
@@ -257,7 +260,7 @@ function WeekStrip({ date, go }: { date: DateKey; go: (d: DateKey) => void }) {
 
   return (
     <div className="week">
-      <button className="icon-btn week-nav" onClick={() => shift(-1)} aria-label="Vorherige Woche"><Icon name="left" size={18} /></button>
+      <button className="icon-btn week-nav" onClick={() => shift(-1)} aria-label={t.common.prevWeek}><Icon name="left" size={18} /></button>
       <div className="week-viewport">
         {blur.filter}
         <motion.div
@@ -289,7 +292,7 @@ function WeekStrip({ date, go }: { date: DateKey; go: (d: DateKey) => void }) {
                     onClick={() => go(d)}
                     disabled={future}
                     aria-current={d === date ? 'date' : undefined}
-                    aria-label={formatLong(d) + (r >= 0 ? `, ${Math.round(r * 100)} % erledigt` : '')}
+                    aria-label={formatLong(d) + (r >= 0 ? `, ${t.today.dayDone(Math.round(r * 100))}` : '')}
                   >
                     <span className="wd-name">{weekdayShort(weekday(d)).slice(0, 2)}</span>
                     <span className="wd-num">{fromKey(d).getDate()}</span>
@@ -301,7 +304,7 @@ function WeekStrip({ date, go }: { date: DateKey; go: (d: DateKey) => void }) {
           </AnimatePresence>
         </motion.div>
       </div>
-      <button className="icon-btn week-nav" onClick={() => shift(1)} disabled={isCurrentWeek} aria-label="Nächste Woche"><Icon name="right" size={18} /></button>
+      <button className="icon-btn week-nav" onClick={() => shift(1)} disabled={isCurrentWeek} aria-label={t.common.nextWeek}><Icon name="right" size={18} /></button>
     </div>
   );
 }

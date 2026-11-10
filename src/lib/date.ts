@@ -68,18 +68,26 @@ export function weekdayOrder(weekStart: 0 | 1): number[] {
   return Array.from({ length: 7 }, (_, i) => (i + weekStart) % 7);
 }
 
-const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('de-DE', o);
-const longF = fmt({ weekday: 'long', day: 'numeric', month: 'long' });
-const shortWd = fmt({ weekday: 'short' });
-const longWd = fmt({ weekday: 'long' });
-const monthF = fmt({ month: 'long', year: 'numeric' });
-const shortF = fmt({ day: 'numeric', month: 'short' });
-const dayMonthF = fmt({ day: 'numeric', month: 'long' });
+// Display formatting follows the UI language (set by the i18n provider). Date keys and calculations never do.
+let LOCALE = 'de-DE';
+export const setDateLocale = (lang: 'de' | 'en') => void (LOCALE = lang === 'en' ? 'en-GB' : 'de-DE');
+export const locale = () => LOCALE;
 
-export const formatLong = (k: DateKey) => longF.format(fromKey(k));
-export const formatShort = (k: DateKey) => shortF.format(fromKey(k));
-export const formatDayMonth = (k: DateKey) => dayMonthF.format(fromKey(k));
-export const formatMonth = (k: DateKey) => monthF.format(fromKey(k));
+const cache = new Map<string, Intl.DateTimeFormat>();
+const fmt = (name: string, o: Intl.DateTimeFormatOptions) => {
+  const k = LOCALE + name;
+  let f = cache.get(k);
+  if (!f) cache.set(k, (f = new Intl.DateTimeFormat(LOCALE, o)));
+  return f;
+};
+
+export const formatLong = (k: DateKey) => fmt('long', { weekday: 'long', day: 'numeric', month: 'long' }).format(fromKey(k));
+export const formatShort = (k: DateKey) => fmt('short', { day: 'numeric', month: 'short' }).format(fromKey(k));
+export const formatDayMonth = (k: DateKey) => fmt('dayMonth', { day: 'numeric', month: 'long' }).format(fromKey(k));
+export const formatMonth = (k: DateKey) => fmt('month', { month: 'long', year: 'numeric' }).format(fromKey(k));
+export const formatTime = (ms: number) => fmt('time', { hour: '2-digit', minute: '2-digit' }).format(ms);
+export const formatDateTime = (ms: number) => fmt('dateTime', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(ms);
+export const formatNumber = (n: number) => n.toLocaleString(LOCALE, { maximumFractionDigits: 2 });
 // 2024-01-07 is a Sunday, so +wd gives that weekday.
-export const weekdayShort = (wd: number) => shortWd.format(new Date(2024, 0, 7 + wd, 12)).replace('.', '');
-export const weekdayLong = (wd: number) => longWd.format(new Date(2024, 0, 7 + wd, 12));
+export const weekdayShort = (wd: number) => fmt('wdShort', { weekday: 'short' }).format(new Date(2024, 0, 7 + wd, 12)).replace('.', '');
+export const weekdayLong = (wd: number) => fmt('wdLong', { weekday: 'long' }).format(new Date(2024, 0, 7 + wd, 12));

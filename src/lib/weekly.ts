@@ -1,4 +1,5 @@
 import { addDays, isValidKey, startOfWeek, type DateKey } from './date';
+import { de, type Messages } from '../i18n/messages';
 import { completionId, isActiveOn, isArchived, isFrequencyAt, isWeeklyGoalAt, ruleAt, uid, type Analysis, type Completion, type Habit, type JournalEntry } from './model';
 
 // Weekly count goals. Two sources count toward a week:
@@ -46,9 +47,8 @@ export function weekStatus(h: Habit, all: Iterable<Dated>, ws: DateKey): WeekSta
 }
 
 /** "0 von 2 Analysen" / "2 von 4"; extra progress stays visible ("3 von 2 Analysen"). */
-export function weekLabel(s: WeekStatus, kind: Habit['kind'] = 'weekly'): string {
-  if (kind !== 'weekly') return `${s.count} von ${s.target}`;
-  return `${s.count} von ${s.target} ${s.target === 1 ? 'Analyse' : 'Analysen'}`;
+export function weekLabel(s: WeekStatus, kind: Habit['kind'] = 'weekly', m: Messages = de): string {
+  return kind === 'weekly' ? m.week.labelAnalyses(s.count, s.target) : m.week.label(s.count, s.target);
 }
 
 /** The items that count for a habit: analyses for analysis goals, completions for frequency habits. */
@@ -101,14 +101,15 @@ export function weeklyGoals(habits: Habit[], ws: DateKey): Habit[] {
 // ---------- Completions ("X-mal pro Woche") ----------
 
 /** Why a completion can't be recorded on `date` (null = fine). `ignoreId`: the completion being edited. */
-export function completionError(h: Habit, date: DateKey, today: DateKey, completions: Iterable<Completion>, ignoreId?: string): string | null {
-  if (!isValidKey(date)) return 'Bitte ein Datum wählen.';
-  if (date > today) return 'Das Datum darf nicht in der Zukunft liegen.';
-  if (date < h.startDate) return `Das Datum liegt vor dem Beginn dieser Gewohnheit (${h.startDate}).`;
-  if (!isActiveOn(h, date)) return 'An diesem Tag war die Gewohnheit archiviert.';
-  if (!isFrequencyAt(h, date)) return 'An diesem Tag galt für diese Gewohnheit noch kein Wochenziel.';
+export function completionError(h: Habit, date: DateKey, today: DateKey, completions: Iterable<Completion>, ignoreId?: string, m: Messages = de): string | null {
+  const t = m.completion;
+  if (!isValidKey(date)) return t.errDate;
+  if (date > today) return t.errFuture;
+  if (date < h.startDate) return t.errBeforeStart(h.startDate);
+  if (!isActiveOn(h, date)) return t.errArchived;
+  if (!isFrequencyAt(h, date)) return t.errNoGoal;
   if (!ruleAt(h, date).multi) {
-    for (const c of completions) if (c.habitId === h.id && c.date === date && c.id !== ignoreId) return 'An diesem Tag ist bereits eine Erledigung erfasst.';
+    for (const c of completions) if (c.habitId === h.id && c.date === date && c.id !== ignoreId) return t.errTwice;
   }
   return null;
 }
@@ -129,15 +130,16 @@ export interface AnalysisDraft {
 }
 
 /** `startDate`: the habit's start; earlier analyses would fall outside every counted week. */
-export function validateAnalysis(d: AnalysisDraft, today: DateKey, startDate: DateKey): Partial<Record<keyof AnalysisDraft, string>> {
+export function validateAnalysis(d: AnalysisDraft, today: DateKey, startDate: DateKey, m: Messages = de): Partial<Record<keyof AnalysisDraft, string>> {
+  const t = m.analysis;
   const e: Partial<Record<keyof AnalysisDraft, string>> = {};
-  if (!d.title.trim()) e.title = 'Bitte einen Artikeltitel eingeben.';
-  else if (d.title.length > 300) e.title = 'Höchstens 300 Zeichen.';
-  if (d.url.trim() && !isHttpUrl(d.url.trim())) e.url = 'Bitte eine vollständige Adresse mit https:// eingeben.';
-  if (!isValidKey(d.date)) e.date = 'Bitte ein Datum wählen.';
-  else if (d.date > today) e.date = 'Das Datum darf nicht in der Zukunft liegen.';
-  else if (d.date < startDate) e.date = `Das Datum liegt vor dem Beginn dieser Gewohnheit (${startDate}). Passe bei Bedarf den Beginn an.`;
-  if (!d.learnings.trim()) e.learnings = 'Bitte die wichtigsten Erkenntnisse festhalten.';
+  if (!d.title.trim()) e.title = t.errTitle;
+  else if (d.title.length > 300) e.title = t.errTitleLong;
+  if (d.url.trim() && !isHttpUrl(d.url.trim())) e.url = t.errUrl;
+  if (!isValidKey(d.date)) e.date = t.errDate;
+  else if (d.date > today) e.date = t.errFuture;
+  else if (d.date < startDate) e.date = t.errBeforeStart(startDate);
+  if (!d.learnings.trim()) e.learnings = t.errLearnings;
   return e;
 }
 
@@ -165,12 +167,13 @@ export interface JournalDraft {
   learned: string;
 }
 
-export function validateJournal(d: JournalDraft, today: DateKey): Partial<Record<keyof JournalDraft | 'content', string>> {
+export function validateJournal(d: JournalDraft, today: DateKey, m: Messages = de): Partial<Record<keyof JournalDraft | 'content', string>> {
+  const t = m.journal;
   const e: Partial<Record<keyof JournalDraft | 'content', string>> = {};
-  if (!isValidKey(d.date)) e.date = 'Bitte ein Datum wählen.';
-  else if (d.date > today) e.date = 'Das Datum darf nicht in der Zukunft liegen.';
-  if (!d.notes.trim() && !d.learned.trim()) e.content = 'Bitte Notizen oder ein Learning eintragen.';
-  if (d.title.length > 200) e.title = 'Höchstens 200 Zeichen.';
+  if (!isValidKey(d.date)) e.date = t.errDate;
+  else if (d.date > today) e.date = t.errFuture;
+  if (!d.notes.trim() && !d.learned.trim()) e.content = t.errContent;
+  if (d.title.length > 200) e.title = t.errTitle;
   return e;
 }
 

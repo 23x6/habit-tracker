@@ -11,6 +11,8 @@ import { defaultSettings, uid, type Analysis, type Completion, type Entry, type 
 // account. Every handle is bound to its database, so a write that finishes after an account switch can never
 // land in another account's cache.
 export const DB_VERSION = 3;
+/** Error message code for an upgrade blocked by another open tab (translated by the UI). */
+export const DB_BLOCKED = 'db-blocked';
 export const LOCAL_DB = 'still';
 export const accountDbName = (userId: string) => `still-account-${userId}`;
 
@@ -126,7 +128,7 @@ export class StillDb {
           resolve(db);
         };
         r.onerror = () => reject(r.error);
-        r.onblocked = () => reject(new Error('Bitte andere geöffnete Still-Tabs schließen und neu laden.'));
+        r.onblocked = () => reject(new Error(DB_BLOCKED));
       });
       this.dbp.catch(() => (this.dbp = null));
     }
@@ -249,6 +251,10 @@ export class StillDb {
 
   setMeta(key: string, value: unknown) {
     return this.tx(['meta'], 'readwrite', (t) => void t.objectStore('meta').put(value, key));
+  }
+
+  deleteMeta(key: string) {
+    return this.tx(['meta'], 'readwrite', (t) => void t.objectStore('meta').delete(key));
   }
 
   // ---------- sync bookkeeping ----------

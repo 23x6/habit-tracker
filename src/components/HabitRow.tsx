@@ -1,6 +1,7 @@
 import { animate, motion, useMotionValue, useTransform, type DragControls, type PanInfo } from 'framer-motion';
 import { useRef, useState } from 'react';
-import { startOfWeek, type DateKey } from '../lib/date';
+import { useT } from '../i18n';
+import { formatNumber, startOfWeek, type DateKey } from '../lib/date';
 import { completionId, isComplete, isFrequencyAt, ruleAt, targetAt, type Habit } from '../lib/model';
 import { countSource, weekLabel, weekStatus } from '../lib/weekly';
 import { useStore } from '../store';
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, onEdit, onAddAnalysis }: Props) {
+  const t = useT();
   const { getEntry, setEntry, setArchived, today, analyses, completions, settings, toggleCompletion } = useStore();
   const weekly = habit.kind === 'weekly'; // analyses
   const frequency = isFrequencyAt(habit, date); // "X-mal pro Woche"
@@ -56,8 +58,8 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
   const toggle = () => {
     if (future || weekly) return; // a weekly analysis goal is only met by saved analyses
     if (frequency) return void toggleCompletion(habit, date);
-    if (habit.kind === 'binary') setEntry(habit, date, done ? 0 : 1, undefined, done ? `„${habit.name}" wieder offen` : `„${habit.name}" erledigt`);
-    else setEntry(habit, date, done ? 0 : target, undefined, done ? `„${habit.name}" zurückgesetzt` : `„${habit.name}" erreicht`);
+    if (habit.kind === 'binary') setEntry(habit, date, done ? 0 : 1, undefined, done ? t.toast.reopened(habit.name) : t.toast.done(habit.name));
+    else setEntry(habit, date, done ? 0 : target, undefined, done ? t.toast.reset(habit.name) : t.toast.reached(habit.name));
   };
 
   const onDragEnd = (_: unknown, i: PanInfo) => {
@@ -73,8 +75,8 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
   const step = (d: number) => !future && setEntry(habit, date, Math.max(0, value + d));
 
   const label = week
-    ? week.achieved ? `Wochenziel erreicht · ${weekLabel(week, habit.kind)}` : `${weekLabel(week, habit.kind)} diese Woche`
-    : habit.kind === 'binary' ? (done ? 'Erledigt' : 'Offen') : `${fmtNum(value)} / ${fmtNum(target)}${unit}`;
+    ? week.achieved ? t.row.weekReached(weekLabel(week, habit.kind, t)) : t.row.thisWeek(weekLabel(week, habit.kind, t))
+    : habit.kind === 'binary' ? (done ? t.common.done : t.common.open) : `${fmtNum(value)} / ${fmtNum(target)}${unit}`;
 
   return (
     <div className={'row-wrap' + (done ? ' done' : '')}>
@@ -88,13 +90,13 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
       {/* Revealed by swipe left; focusable, so keyboard users open the row by tabbing in */}
       <motion.div className="row-under right" style={{ visibility: rightVis }}>
         <button className="row-action" onClick={() => (settle(0), onOpen())} onFocus={() => settle(-ACTIONS_W)} tabIndex={open ? 0 : -1}>
-          <Icon name="info" size={20} /><span>Details</span>
+          <Icon name="info" size={20} /><span>{t.common.details}</span>
         </button>
         <button className="row-action" onClick={() => (settle(0), onEdit())} onFocus={() => settle(-ACTIONS_W)} tabIndex={open ? 0 : -1}>
-          <Icon name="edit" size={20} /><span>Bearbeiten</span>
+          <Icon name="edit" size={20} /><span>{t.common.edit}</span>
         </button>
         <button className="row-action dark" onClick={() => (settle(0), setArchived(habit.id, true))} onFocus={() => settle(-ACTIONS_W)} tabIndex={open ? 0 : -1}>
-          <Icon name="archive" size={20} /><span>Archivieren</span>
+          <Icon name="archive" size={20} /><span>{t.common.archive}</span>
         </button>
       </motion.div>
 
@@ -117,12 +119,12 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
             if (open) settle(0);
             else onOpen();
           }}
-          aria-label={`${habit.name}, ${label}. Details öffnen`}
+          aria-label={t.row.openDetails(habit.name, label)}
         >
           <span className="row-icon"><Icon habit={habit.icon} /></span>
           <span className="row-text">
             <span className="row-name">{habit.name}</span>
-            <span className="row-sub">{habit.kind === 'binary' && !frequency ? habit.description || 'Einmal am Tag' : label}</span>
+            <span className="row-sub">{habit.kind === 'binary' && !frequency ? habit.description || t.row.onceADay : label}</span>
             {(habit.kind === 'numeric' || week) && (
               <span className="bar" aria-hidden="true">
                 <motion.span className="bar-fill" initial={false} animate={{ scaleX: week ? Math.min(1, week.count / week.target) : Math.min(1, value / target) }} transition={springs.gentle} />
@@ -135,7 +137,7 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
           <div className="sort-ctl">
             <button
               className="icon-btn handle"
-              aria-label={`${habit.name} verschieben. Pfeiltasten hoch und runter`}
+              aria-label={t.row.move(habit.name)}
               onPointerDown={(ev) => dragControls?.start(ev)}
               onKeyDown={(ev) => {
                 if (ev.key === 'ArrowUp') (ev.preventDefault(), onMove?.(-1));
@@ -150,7 +152,7 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
           <motion.button
             className={'icon-btn round' + (done ? ' filled' : '')}
             onClick={onAddAnalysis}
-            aria-label={`Analyse hinzufügen: ${habit.name}`}
+            aria-label={t.row.addAnalysis(habit.name)}
             whileTap={reduce ? undefined : { scale: 0.86 }}
           >
             <Icon name="plus" size={18} />
@@ -160,7 +162,7 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
             className="icon-btn round"
             onClick={toggle}
             disabled={future}
-            aria-label={`Erledigung hinzufügen: ${habit.name}`}
+            aria-label={t.row.addCompletion(habit.name)}
             whileTap={reduce ? undefined : { scale: 0.86 }}
           >
             <Icon name="plus" size={18} />
@@ -171,7 +173,7 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
             onClick={toggle}
             disabled={future}
             aria-pressed={doneOnDate}
-            aria-label={doneOnDate ? `Erledigung von ${habit.name} an diesem Tag entfernen` : `Erledigung hinzufügen: ${habit.name}`}
+            aria-label={doneOnDate ? t.row.removeCompletion(habit.name) : t.row.addCompletion(habit.name)}
             whileTap={reduce ? undefined : { scale: 0.86 }}
             transition={springs.snappy}
           >
@@ -185,7 +187,7 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
             onClick={toggle}
             disabled={future}
             aria-pressed={done}
-            aria-label={`${habit.name} ${done ? 'als offen markieren' : 'abhaken'}`}
+            aria-label={done ? t.row.uncheck(habit.name) : t.row.check(habit.name)}
             whileTap={reduce ? undefined : { scale: 0.86 }}
             transition={springs.snappy}
           >
@@ -195,10 +197,10 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
           </motion.button>
         ) : (
           <div className="stepper">
-            <motion.button className="icon-btn round" onClick={() => step(-1)} disabled={future || value <= 0} aria-label={`${habit.name} verringern`} whileTap={reduce ? undefined : { scale: 0.86 }}>
+            <motion.button className="icon-btn round" onClick={() => step(-1)} disabled={future || value <= 0} aria-label={t.row.decrease(habit.name)} whileTap={reduce ? undefined : { scale: 0.86 }}>
               <Icon name="minus" size={18} />
             </motion.button>
-            <motion.button className={'icon-btn round' + (done ? ' filled' : '')} onClick={() => step(1)} disabled={future} aria-label={`${habit.name} erhöhen`} whileTap={reduce ? undefined : { scale: 0.86 }}>
+            <motion.button className={'icon-btn round' + (done ? ' filled' : '')} onClick={() => step(1)} disabled={future} aria-label={t.row.increase(habit.name)} whileTap={reduce ? undefined : { scale: 0.86 }}>
               {done ? <Icon name="check" size={18} /> : <Icon name="plus" size={18} />}
             </motion.button>
           </div>
@@ -208,4 +210,4 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
   );
 }
 
-export const fmtNum = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 2 });
+export const fmtNum = formatNumber;

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { AccountSection } from '../components/Account';
+import { AccountSection, LangSwitch } from '../components/Account';
+import { useT } from '../i18n';
 import { Confirm, Segmented, Sheet } from '../components/ui';
 import { toExport, validateImport } from '../lib/io';
 import { isArchived, type Settings as S } from '../lib/model';
@@ -8,14 +9,8 @@ import { emptySnapshot, type Snapshot } from '../lib/db';
 import { today as todayKey } from '../lib/date';
 import { useStore } from '../store';
 
-const permText: Record<PermissionState, string> = {
-  granted: 'Mitteilungen erlaubt',
-  denied: 'Mitteilungen blockiert – in den Browser- bzw. iOS-Einstellungen änderbar',
-  default: 'Noch nicht erlaubt',
-  unsupported: 'Dieser Browser unterstützt keine Mitteilungen. Auf dem iPhone erst nach „Zum Home-Bildschirm" (iOS 16.4+).',
-};
-
 export function Settings() {
+  const t = useT();
   const { settings, setSettings, habits, entriesOf, analyses, journal, completions, replaceAll, showToast, addExamples, partition } = useStore();
   const account = partition.sync;
   const [perm, setPerm] = useState<PermissionState>(permission());
@@ -33,7 +28,7 @@ export function Settings() {
     a.download = `still-export-${todayKey()}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    showToast(`Export: ${habits.length} Gewohnheiten, ${entries.length + completions.length} Erledigungen, ${analyses.length} Analysen, ${journal.length} Journal-Einträge`);
+    showToast(t.toast.exported(habits.length, entries.length + completions.length, analyses.length, journal.length));
   };
 
   const onFile = async (f: File | undefined) => {
@@ -41,12 +36,12 @@ export function Settings() {
     if (file.current) file.current.value = '';
     let raw: unknown;
     try {
-      if (f.size > 20_000_000) throw new Error('Datei ist zu groß.');
+      if (f.size > 20_000_000) throw new Error(t.settings.fileTooLarge);
       raw = JSON.parse(await f.text());
     } catch (e) {
-      return setImportErrors([e instanceof SyntaxError ? 'Die Datei ist kein gültiges JSON.' : String((e as Error).message)]);
+      return setImportErrors([e instanceof SyntaxError ? t.settings.notJson : String((e as Error).message)]);
     }
-    const r = validateImport(raw);
+    const r = validateImport(raw, t);
     if (r.ok) setPending({ data: r.data, fromVersion: r.fromVersion });
     else setImportErrors(r.errors);
   };
@@ -58,90 +53,88 @@ export function Settings() {
 
   return (
     <div className="screen">
-      <h1 className="screen-title">Einstellungen</h1>
+      <h1 className="screen-title">{t.settings.title}</h1>
 
       <AccountSection />
 
       <section className="card">
-        <h2>Erinnerungen</h2>
+        <h2>{t.lang.name}</h2>
+        <LangSwitch />
+      </section>
+
+      <section className="card">
+        <h2>{t.settings.reminders}</h2>
         <label className="switch-row">
-          <span>Erinnerungen anzeigen</span>
+          <span>{t.settings.showReminders}</span>
           <input type="checkbox" role="switch" checked={settings.remindersEnabled} onChange={(e) => enableReminders(e.target.checked)} />
         </label>
-        <p className="muted small">Status: {permText[perm]}</p>
+        <p className="muted small">{t.settings.status(t.settings.perm[perm])}</p>
         {perm === 'default' && settings.remindersEnabled && (
-          <button className="btn small" onClick={async () => setPerm(await requestPermission())}>Mitteilungen erlauben</button>
+          <button className="btn small" onClick={async () => setPerm(await requestPermission())}>{t.settings.allowNotifications}</button>
         )}
-        <p className="muted small">
-          {withReminder} Gewohnheit{withReminder === 1 ? '' : 'en'} mit Uhrzeit. Wichtig: Still verschickt keine Push-Nachrichten. Erinnerungen erscheinen
-          nur, solange die App geöffnet ist – geschlossen oder im Hintergrund kann der Browser sie nicht zuverlässig zustellen. Ohne Erlaubnis erscheint
-          der Hinweis innerhalb der App.
-        </p>
+        <p className="muted small">{t.settings.reminderInfo(withReminder)}</p>
       </section>
 
       <section className="card">
-        <h2>Darstellung</h2>
+        <h2>{t.settings.appearance}</h2>
         <div className="setting">
-          <span>Wochenbeginn</span>
-          <Segmented<S['weekStart']> label="Wochenbeginn" value={settings.weekStart} onChange={(v) => setSettings({ weekStart: v })} options={[{ value: 1, label: 'Montag' }, { value: 0, label: 'Sonntag' }]} />
+          <span>{t.settings.weekStart}</span>
+          <Segmented<S['weekStart']> label={t.settings.weekStart} value={settings.weekStart} onChange={(v) => setSettings({ weekStart: v })} options={[{ value: 1, label: t.settings.monday }, { value: 0, label: t.settings.sunday }]} />
         </div>
         <div className="setting">
-          <span>Bewegung</span>
-          <Segmented<S['motion']> label="Bewegung" value={settings.motion} onChange={(v) => setSettings({ motion: v })} options={[{ value: 'system', label: 'System' }, { value: 'reduce', label: 'Reduziert' }, { value: 'full', label: 'Voll' }]} />
+          <span>{t.settings.motion}</span>
+          <Segmented<S['motion']> label={t.settings.motion} value={settings.motion} onChange={(v) => setSettings({ motion: v })} options={[{ value: 'system', label: t.settings.motionSystem }, { value: 'reduce', label: t.settings.motionReduce }, { value: 'full', label: t.settings.motionFull }]} />
         </div>
-        <p className="muted small">„Reduziert" schaltet Bewegungsunschärfe und große Bewegungen ab.</p>
+        <p className="muted small">{t.settings.motionNote}</p>
       </section>
 
       <section className="card">
-        <h2>Daten</h2>
-        <p className="muted small">
-          {account
-            ? 'Diese Daten gehören zu deinem Konto und werden zwischen deinen Geräten synchronisiert. Ein Export ist zusätzlich eine Sicherung für dich.'
-            : 'Lokaler Modus: Alle Daten liegen nur in diesem Browser auf diesem Gerät, ohne Synchronisierung. Ein Export ist deine Sicherung – etwa vor dem Löschen der Website-Daten oder einem Gerätewechsel.'}
-        </p>
+        <h2>{t.settings.data}</h2>
+        <p className="muted small">{account ? t.settings.dataAccount : t.settings.dataLocal}</p>
+        <p className="muted small">{t.settings.saveNote}</p>
         <div className="btn-col">
-          <button className="btn wide" onClick={doExport}>Als JSON exportieren</button>
-          <button className="btn wide" onClick={() => file.current?.click()}>JSON importieren …</button>
+          <button className="btn wide" onClick={doExport}>{t.settings.export}</button>
+          <button className="btn wide" onClick={() => file.current?.click()}>{t.settings.import}</button>
           <input ref={file} type="file" accept="application/json,.json" hidden onChange={(e) => onFile(e.target.files?.[0])} />
-          <button className="btn wide" onClick={addExamples}>Beispielgewohnheiten hinzufügen</button>
-          <button className="btn wide danger-text" onClick={() => setConfirmClear(true)}>{account ? 'Alle Kontodaten löschen …' : 'Alle Daten löschen …'}</button>
+          <button className="btn wide" onClick={addExamples}>{t.today.addExamples}</button>
+          <button className="btn wide danger-text" onClick={() => setConfirmClear(true)}>{account ? t.settings.clearAccount : t.settings.clearLocal}</button>
         </div>
       </section>
 
-      <p className="muted small center">{account ? 'Still · Konto · funktioniert auch offline' : 'Still · lokal gespeichert · funktioniert offline'}</p>
+      <p className="muted small center">{account ? t.settings.footerAccount : t.settings.footerLocal}</p>
 
       <Confirm
         open={!!pending}
-        title="Import ersetzt alle Daten"
-        text={pending ? `Die Datei ist gültig${pending.fromVersion < 3 ? ' (ältere Version, wird übernommen)' : ''}: ${pending.data.habits.length} Gewohnheiten, ${pending.data.entries.length + pending.data.completions.length} Erledigungen, ${pending.data.analyses.length} Analysen, ${pending.data.journal.length} Journal-Einträge. ${account ? 'Alle Daten in deinem Konto werden ersetzt – auf allen Geräten.' : 'Deine aktuellen Daten werden vollständig ersetzt.'} Exportiere vorher, wenn du sie behalten möchtest.` : ''}
-        action="Ersetzen"
+        title={t.settings.importTitle}
+        text={pending ? t.settings.importText(pending.fromVersion < 3, pending.data.habits.length, pending.data.entries.length + pending.data.completions.length, pending.data.analyses.length, pending.data.journal.length, account) : ''}
+        action={t.settings.replace}
         onClose={() => setPending(null)}
         onConfirm={async () => {
           if (!pending) return;
           try {
             await replaceAll(pending.data);
-            showToast('Import abgeschlossen');
+            showToast(t.toast.importDone);
           } catch (e) {
-            showToast('Import fehlgeschlagen, nichts wurde geändert: ' + (e as Error).message);
+            showToast(t.toast.importFailed((e as Error).message));
           }
         }}
       />
-      <Sheet open={!!importErrors} onClose={() => setImportErrors(null)} title="Import nicht möglich">
-        <p className="muted">Es wurde nichts geändert.</p>
+      <Sheet open={!!importErrors} onClose={() => setImportErrors(null)} title={t.settings.importImpossible}>
+        <p className="muted">{t.settings.nothingChanged}</p>
         <ul className="error-list">{importErrors?.map((e, i) => <li key={i}>{e}</li>)}</ul>
       </Sheet>
       <Confirm
         open={confirmClear}
-        title={account ? 'Alle Kontodaten löschen?' : 'Alle Daten löschen?'}
-        text={`${habits.length} Gewohnheiten mit allen Einträgen, ${analyses.length} Analysen, ${journal.length} Journal-Einträge und die Einstellungen werden ${account ? 'aus deinem Konto gelöscht – auf allen Geräten' : 'von diesem Gerät gelöscht'}. Das kann nicht rückgängig gemacht werden.`}
-        action="Alles löschen"
+        title={account ? t.settings.clearTitleAccount : t.settings.clearTitleLocal}
+        text={t.settings.clearText(habits.length, analyses.length, journal.length, account)}
+        action={t.settings.clearAll}
         onClose={() => setConfirmClear(false)}
         onConfirm={async () => {
           try {
             await replaceAll(emptySnapshot());
-            showToast('Alle Daten gelöscht');
+            showToast(t.toast.cleared);
           } catch (e) {
-            showToast('Löschen fehlgeschlagen: ' + (e as Error).message);
+            showToast(t.toast.clearFailed((e as Error).message));
           }
         }}
       />

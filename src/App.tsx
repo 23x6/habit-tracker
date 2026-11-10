@@ -1,6 +1,8 @@
 import { AnimatePresence, motion, MotionConfig } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { RecoverySheet } from './components/Account';
+import { HeaderAccountButton, LangSwitch, RecoverySheet, SaveStatus } from './components/Account';
+import { useT } from './i18n';
+import { DB_BLOCKED } from './lib/db';
 import { HabitSheet } from './components/HabitSheet';
 import { Icon, springs, ToastHost, useReduce } from './components/ui';
 import type { UIIcon } from './lib/icons';
@@ -14,14 +16,15 @@ import { Today } from './screens/Today';
 import { useStore } from './store';
 
 type Tab = 'today' | 'journal' | 'stats' | 'settings';
-const TABS: { id: Tab; label: string; icon: UIIcon }[] = [
-  { id: 'today', label: 'Heute', icon: 'today' },
-  { id: 'journal', label: 'Journal', icon: 'journal' },
-  { id: 'stats', label: 'Statistik', icon: 'chart' },
-  { id: 'settings', label: 'Einstellungen', icon: 'settings' },
+const TABS: { id: Tab; icon: UIIcon }[] = [
+  { id: 'today', icon: 'today' },
+  { id: 'journal', icon: 'journal' },
+  { id: 'stats', icon: 'chart' },
+  { id: 'settings', icon: 'settings' },
 ];
 
 export function App() {
+  const t = useT();
   const store = useStore();
   const { status, error, habits, settings, today, getEntry, showToast } = store;
   const reduce = useReduce();
@@ -48,22 +51,22 @@ export function App() {
   // In-app reminders (only while open — see lib/reminders.ts).
   useEffect(() => {
     if (!settings.remindersEnabled || status !== 'ready') return;
-    const check = () => notify(dueReminders(habits, getEntry), (m) => showToast(m));
+    const check = () => notify(dueReminders(habits, getEntry), (m) => showToast(m), t.reminder.body);
     check();
     const iv = setInterval(check, 30_000);
     return () => clearInterval(iv);
-  }, [settings.remindersEnabled, habits, getEntry, status, showToast]);
+  }, [settings.remindersEnabled, habits, getEntry, status, showToast, t]);
 
   const detail = habits.find((h) => h.id === detailId) ?? null;
 
-  if (status === 'loading') return <div className="center-screen" aria-busy="true"><span className="spinner" aria-label="Lädt" /></div>;
+  if (status === 'loading') return <div className="center-screen" aria-busy="true"><span className="spinner" aria-label={t.common.loading} /></div>;
   if (status === 'error')
     return (
       <div className="center-screen">
         <div className="empty">
-          <h2>Speicher nicht verfügbar</h2>
-          <p>Still konnte die lokale Datenbank nicht öffnen{error ? ` (${error})` : ''}. Im privaten Modus oder bei blockierten Website-Daten ist das nicht möglich.</p>
-          <button className="btn primary" onClick={() => location.reload()}>Erneut versuchen</button>
+          <h2>{t.app.storageUnavailable}</h2>
+          <p>{t.app.storageUnavailableText(error === DB_BLOCKED ? t.app.blocked : error ?? '')}</p>
+          <button className="btn primary" onClick={() => location.reload()}>{t.common.retry}</button>
         </div>
       </div>
     );
@@ -71,7 +74,15 @@ export function App() {
   return (
     <MotionConfig reducedMotion={settings.motion === 'reduce' ? 'always' : settings.motion === 'full' ? 'never' : 'user'}>
       <div className={'app' + (reduce ? ' reduce' : '')}>
-        {!online && <div className="offline-badge" role="status">Offline · Daten werden lokal gesichert</div>}
+        {!online && <div className="offline-badge" role="status">{t.app.offline}</div>}
+        {/* Desktop utility bar (≥ 768 px). Hidden with display:none below that, so nothing in it is focusable. */}
+        <header className="app-header" aria-label={t.app.utilities}>
+          <SaveStatus />
+          <div className="app-header-tools">
+            <LangSwitch compact />
+            <HeaderAccountButton />
+          </div>
+        </header>
         <main className="main" aria-hidden={!!detail || undefined}>
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.div
@@ -91,12 +102,12 @@ export function App() {
           </AnimatePresence>
         </main>
 
-        <nav className="tabbar" aria-label="Hauptnavigation">
-          {TABS.map((t) => (
-            <button key={t.id} className={'tab' + (tab === t.id ? ' on' : '')} onClick={() => setTab(t.id)} aria-label={t.label} aria-current={tab === t.id ? 'page' : undefined}>
-              {tab === t.id && <motion.span layoutId="tab-pill" className="tab-pill" transition={springs.snappy} />}
-              <Icon name={t.icon} size={21} />
-              <span className="tab-label">{t.label}</span>
+        <nav className="tabbar" aria-label={t.nav.main}>
+          {TABS.map((x) => (
+            <button key={x.id} className={'tab' + (tab === x.id ? ' on' : '')} onClick={() => setTab(x.id)} aria-label={t.nav[x.id]} aria-current={tab === x.id ? 'page' : undefined}>
+              {tab === x.id && <motion.span layoutId="tab-pill" className="tab-pill" transition={springs.snappy} />}
+              <Icon name={x.icon} size={21} />
+              <span className="tab-label">{t.nav[x.id]}</span>
             </button>
           ))}
         </nav>

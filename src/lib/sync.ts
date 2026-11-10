@@ -172,11 +172,13 @@ export class SyncManager {
     const visible = () => document.visibilityState === 'visible' && now();
     const offline = () => this.set({ status: 'offline' });
     window.addEventListener('online', now);
+    window.addEventListener('focus', now);
     window.addEventListener('offline', offline);
     document.addEventListener('visibilitychange', visible);
     const iv = setInterval(() => document.visibilityState === 'visible' && this.schedule(0), 30_000);
     this.cleanup.push(() => {
       window.removeEventListener('online', now);
+      window.removeEventListener('focus', now);
       window.removeEventListener('offline', offline);
       document.removeEventListener('visibilitychange', visible);
       clearInterval(iv);
