@@ -12,7 +12,7 @@ import { useStore } from '../store';
 
 export function Settings() {
   const t = useT();
-  const { settings, setSettings, habits, entriesOf, analyses, journal, completions, replaceAll, showToast, addExamples, partition } = useStore();
+  const { settings, setSettings, habits, entriesOf, analyses, journal, completions, reviews, replaceAll, showToast, addExamples, partition } = useStore();
   const account = partition.sync;
   const [perm, setPerm] = useState<PermissionState>(permission());
   const [pending, setPending] = useState<{ data: Snapshot; fromVersion: number } | null>(null);
@@ -25,7 +25,7 @@ export function Settings() {
 
   const doExport = () => {
     const entries = habits.flatMap((h) => entriesOf(h.id));
-    const blob = new Blob([JSON.stringify(toExport({ habits, entries, settings, analyses, journal, completions }), null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(toExport({ habits, entries, settings, analyses, journal, completions, reviews }), null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `ryvo-export-${todayKey()}.json`;
@@ -125,7 +125,7 @@ export function Settings() {
       <Confirm
         open={!!pending}
         title={t.settings.importTitle}
-        text={pending ? t.settings.importText(pending.fromVersion < 3, pending.data.habits.length, pending.data.entries.length + pending.data.completions.length, pending.data.analyses.length, pending.data.journal.length, account) : ''}
+        text={pending ? t.settings.importText(pending.fromVersion < 4, pending.data.habits.length, pending.data.entries.length + pending.data.completions.length, pending.data.analyses.length, pending.data.journal.length, pending.data.reviews.length, account) : ''}
         action={t.settings.replace}
         onClose={() => setPending(null)}
         onConfirm={async () => {

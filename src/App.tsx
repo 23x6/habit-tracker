@@ -13,6 +13,8 @@ import { Detail } from './screens/Detail';
 import { Journal } from './screens/Journal';
 import { Settings } from './screens/Settings';
 import { Stats } from './screens/Stats';
+import { WeeklyReview, type WeekRange } from './screens/WeeklyReview';
+import { addDays, startOfWeek } from './lib/date';
 import { Today } from './screens/Today';
 import { useStore } from './store';
 
@@ -33,6 +35,11 @@ export function App() {
   const [date, setDate] = useState(today);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [sheet, setSheet] = useState<{ habit: Habit | null } | null>(null);
+  const [review, setReview] = useState<WeekRange | null>(null);
+  const openReview = () => {
+    const s = startOfWeek(today, settings.weekStart);
+    setReview({ start: s, end: addDays(s, 6) });
+  };
   const [online, setOnline] = useState(navigator.onLine);
 
   // Follow the calendar: when midnight passes, a selected "today" moves to the new today.
@@ -84,7 +91,7 @@ export function App() {
             <HeaderAccountButton />
           </div>
         </header>
-        <main className="main" aria-hidden={!!detail || undefined}>
+        <main className="main" aria-hidden={!!detail || !!review || undefined}>
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.div
               key={tab}
@@ -94,9 +101,9 @@ export function App() {
               transition={{ type: 'spring', stiffness: 380, damping: 36, opacity: { duration: 0.2 } }}
             >
               {tab === 'today' && (
-                <Today date={date} setDate={setDate} onCreate={() => setSheet({ habit: null })} onEdit={(h) => setSheet({ habit: h })} onOpen={(h) => setDetailId(h.id)} />
+                <Today date={date} setDate={setDate} onCreate={() => setSheet({ habit: null })} onEdit={(h) => setSheet({ habit: h })} onOpen={(h) => setDetailId(h.id)} onReview={openReview} />
               )}
-              {tab === 'stats' && <Stats onOpen={(h) => setDetailId(h.id)} />}
+              {tab === 'stats' && <Stats onOpen={(h) => setDetailId(h.id)} onReview={openReview} />}
               {tab === 'journal' && <Journal />}
               {tab === 'settings' && <Settings />}
             </motion.div>
@@ -114,6 +121,7 @@ export function App() {
         </nav>
 
         <AnimatePresence>
+          {review && !detail && <WeeklyReview key="review" range={review} onRange={setReview} onBack={() => setReview(null)} />}
           {detail && <Detail key={detail.id} habit={detail} onBack={() => setDetailId(null)} onEdit={() => setSheet({ habit: detail })} />}
         </AnimatePresence>
 

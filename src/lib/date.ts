@@ -87,6 +87,11 @@ export const formatDayMonth = (k: DateKey) => fmt('dayMonth', { day: 'numeric', 
 export const formatMonth = (k: DateKey) => fmt('month', { month: 'long', year: 'numeric' }).format(fromKey(k));
 export const formatTime = (ms: number) => fmt('time', { hour: '2-digit', minute: '2-digit' }).format(ms);
 export const formatDateTime = (ms: number) => fmt('dateTime', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(ms);
+/** "9.–15. Nov. 2026" / "9–15 Nov 2026"; years and months are only repeated when they differ. */
+export const formatRange = (a: DateKey, b: DateKey) => {
+  const f = fmt('range', { day: 'numeric', month: 'short', year: 'numeric' }) as Intl.DateTimeFormat & { formatRange?: (x: Date, y: Date) => string };
+  return f.formatRange ? f.formatRange(fromKey(a), fromKey(b)) : `${f.format(fromKey(a))} – ${f.format(fromKey(b))}`;
+};
 export const formatNumber = (n: number) => n.toLocaleString(LOCALE, { maximumFractionDigits: 2 });
 // 2024-01-07 is a Sunday, so +wd gives that weekday.
 export const weekdayShort = (wd: number) => fmt('wdShort', { weekday: 'short' }).format(new Date(2024, 0, 7 + wd, 12)).replace('.', '');

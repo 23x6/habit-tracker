@@ -6,7 +6,8 @@ import { dayProgress, percent, shouldCelebrate, weekProgress, type Progress } fr
 import { weekEnd } from '../lib/weekly';
 import { useStore } from '../store';
 import { StreakBadge } from './Streak';
-import { Segmented, SwitchContent, useReduce } from './ui';
+import { Icon, Segmented, SwitchContent, useReduce } from './ui';
+import { reviewDue } from '../lib/review';
 
 type Mode = 'day' | 'week';
 const MODE_KEY = 'still-dashboard-mode';
@@ -19,9 +20,9 @@ const readMode = (): Mode => {
 };
 
 /** Home dashboard: "Today / Week" switch, large glowing progress ring, concise caption. */
-export function Dashboard({ date }: { date: DateKey }) {
+export function Dashboard({ date, onReview }: { date: DateKey; onReview: () => void }) {
   const t = useT();
-  const { habits, getEntry, analyses, completions, settings, today } = useStore();
+  const { habits, getEntry, analyses, completions, settings, today, reviews } = useStore();
   const [mode, setModeState] = useState<Mode>(readMode);
   const setMode = (m: Mode) => {
     setModeState(m);
@@ -57,6 +58,16 @@ export function Dashboard({ date }: { date: DateKey }) {
       </div>
       {/* Activity streak: its own rules (lib/streak.ts); the ring above keeps its own calculations. */}
       <StreakBadge />
+      {reviewDue(today, settings.weekStart) && (
+        // Near the end of the week: a quiet way into the weekly review, whenever it suits.
+        <button className="dash-review" onClick={onReview}>
+          <span className="muted small">{t.review.dashDue}</span>
+          <span className="dash-review-link">
+            {reviews.some((r) => r.weekStart === startOfWeek(today, settings.weekStart)) ? t.review.dashDone : t.review.dashOpen}
+            <Icon name="right" size={16} />
+          </span>
+        </button>
+      )}
     </section>
   );
 }

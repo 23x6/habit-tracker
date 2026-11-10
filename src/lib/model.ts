@@ -1,6 +1,6 @@
 import { addDays, range, weekday, type DateKey } from './date';
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** Schedule + target valid from `from` onward. Edits append a new rule, so past days keep the rule they had. */
 export interface Rule {
@@ -82,6 +82,22 @@ export interface JournalEntry {
   title: string;
   notes: string;
   learned: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Weekly review: three optional reflections for one explicit week range. The id is `${weekStart}_${weekEnd}`, so
+ * a review stays under its original dates when the preferred week start changes, and two devices writing the same
+ * week edit one record (text conflicts are preserved like journal text).
+ */
+export interface Review {
+  id: string;
+  weekStart: DateKey;
+  weekEnd: DateKey;
+  wentWell: string;
+  heldBack: string;
+  nextWeek: string;
   createdAt: number;
   updatedAt: number;
 }

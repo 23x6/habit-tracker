@@ -16,13 +16,14 @@ export interface ImportPlan {
   completions: number;
   analyses: number;
   journal: number;
+  reviews: number;
   skipped: number;
 }
 
 const norm = (s: string) => s.trim().toLocaleLowerCase('de');
 
 export function planImport(local: Snapshot, account: Snapshot): ImportPlan {
-  const plan: ImportPlan = { ops: [], habits: 0, merged: [], entries: 0, completions: 0, analyses: 0, journal: 0, skipped: 0 };
+  const plan: ImportPlan = { ops: [], habits: 0, merged: [], entries: 0, completions: 0, analyses: 0, journal: 0, reviews: 0, skipped: 0 };
   const accHabits = new Map(account.habits.map((h) => [h.id, h]));
   const accByName = new Map(account.habits.map((h) => [`${h.kind}|${norm(h.name)}`, h]));
   const has = (list: { id: string }[]) => new Set(list.map((x) => x.id));
@@ -30,6 +31,7 @@ export function planImport(local: Snapshot, account: Snapshot): ImportPlan {
   const accCompletions = has(account.completions);
   const accAnalyses = has(account.analyses);
   const accJournal = has(account.journal);
+  const accReviews = has(account.reviews);
 
   // local habit id → account habit id
   const map = new Map<string, string>();
@@ -97,6 +99,16 @@ export function planImport(local: Snapshot, account: Snapshot): ImportPlan {
     }
     plan.ops.push({ kind: 'journal', id: j.id, rec: j });
     plan.journal++;
+  }
+
+  // Reviews are keyed by their week range: an account review for the same range is kept, never overwritten.
+  for (const r of local.reviews) {
+    if (accReviews.has(r.id)) {
+      plan.skipped++;
+      continue;
+    }
+    plan.ops.push({ kind: 'review', id: r.id, rec: r });
+    plan.reviews++;
   }
   return plan;
 }

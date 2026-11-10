@@ -4,7 +4,8 @@ import { useI18n, useT, type Lang } from '../i18n';
 import { planImport, type ImportPlan } from '../lib/accountImport';
 import { credentialErrors, MIN_PASSWORD } from '../lib/auth';
 import { accountDbName, LOCAL_DB, StillDb, type Conflict } from '../lib/db';
-import type { Analysis, JournalEntry } from '../lib/model';
+import { formatRange } from '../lib/date';
+import type { Analysis, JournalEntry, Review } from '../lib/model';
 import { useStore } from '../store';
 import { Confirm, Icon, Segmented, Sheet } from './ui';
 
@@ -372,6 +373,7 @@ function LocalImportSheet({ open, plan, userId, onClose }: { open: boolean; plan
     [t.importLocal.rows.completions, plan.completions],
     [t.importLocal.rows.analyses, plan.analyses],
     [t.importLocal.rows.journal, plan.journal],
+    [t.importLocal.rows.reviews, plan.reviews],
   ];
   const go = async () => {
     setBusy(true);
@@ -421,6 +423,11 @@ function ConflictSheet({ open, onClose }: { open: boolean; onClose: () => void }
       const j = rec as JournalEntry;
       return { title: j.title || j.date, body: [j.notes, j.learned && t.conflict.learned(j.learned)].filter(Boolean).join('\n\n') };
     }
+    if (kind === 'review') {
+      const r = rec as Review;
+      const p = t.review.prompts;
+      return { title: formatRange(r.weekStart, r.weekEnd), body: ([['wentWell', r.wentWell], ['heldBack', r.heldBack], ['nextWeek', r.nextWeek]] as const).filter(([, v]) => v).map(([k, v]) => `${p[k]}\n${v}`).join('\n\n') };
+    }
     const a = rec as Analysis;
     return { title: a.title, body: a.learnings };
   };
@@ -440,7 +447,7 @@ function ConflictSheet({ open, onClose }: { open: boolean; onClose: () => void }
         <ul className="plain-list conflict-list">
           {conflicts.map((c) => (
             <li key={c.key} className="card">
-              <span className="muted small">{c.kind === 'journal' ? t.conflict.journal : t.conflict.analysis}</span>
+              <span className="muted small">{c.kind === 'journal' ? t.conflict.journal : c.kind === 'review' ? t.conflict.review : t.conflict.analysis}</span>
               <Version label={t.conflict.here} kind={c.kind} rec={c.local} />
               <Version label={t.conflict.other} kind={c.kind} rec={c.server} />
               <div className="btn-row">

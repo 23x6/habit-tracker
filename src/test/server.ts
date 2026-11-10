@@ -1,7 +1,10 @@
 import { PGlite } from '@electric-sql/pglite';
-import migration from '../../supabase/migrations/20261110000000_still_records.sql?raw';
 import type { RemoteRow } from '../lib/db';
 import type { Change, PushResult, Remote } from '../lib/sync';
+
+// All migrations, applied in file-name order like `supabase db push`.
+const migrationFiles = import.meta.glob<string>('../../supabase/migrations/*.sql', { query: '?raw', import: 'default', eager: true });
+export const migrations = Object.keys(migrationFiles).sort().map((k) => migrationFiles[k]);
 
 // Test backend: an in-process Postgres (PGlite) running the real migration from supabase/migrations, with a
 // minimal stand-in for Supabase's auth schema (auth.users, auth.uid() from the JWT claim, the roles).
@@ -40,12 +43,14 @@ export interface TestServer {
   remote(userId: string): Remote & { failNext: (n: number, mode?: 'before' | 'after') => void };
 }
 
-export async function createServer(grants: 'none' | 'permissive' = 'none'): Promise<TestServer> {
+/** `upTo`: apply only the first n migrations (to test an upgrade of an existing project). */
+export async function createServer(grants: 'none' | 'permissive' = 'none', upTo = migrations.length): Promise<TestServer> {
   const pg = await PGlite.create();
   await pg.exec(AUTH_STUB);
   if (grants === 'permissive') await pg.exec(PERMISSIVE_DEFAULTS);
-  await pg.exec(migration);
-  await pg.exec(migration); // the migration must be safe to re-run
+  const sql = migrations.slice(0, upTo).join('\n');
+  await pg.exec(sql);
+  await pg.exec(sql); // migrations must be safe to re-run
 
   // PGlite has one connection: serialize "set role → query → reset" so users never interleave.
   let chain: Promise<unknown> = Promise.resolve();

@@ -54,6 +54,7 @@ export function useDraft<T>(key: string | null, value: T, base: T, restore: (v: 
   // Debounced save while typing.
   useEffect(() => {
     if (!key || !ready.current) return;
+    done.current = false; // typing again after a save (form still open) is a new draft
     const id = setTimeout(() => void write(), DEBOUNCE_MS);
     return () => clearTimeout(id);
   }, [key, value, write]);

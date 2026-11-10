@@ -55,7 +55,7 @@ async function mount(date = T) {
         <StoreProvider partition={{ name: `still-today-test-${++n}`, sync: false, userId: null }}>
           <AuthProvider>
             <Grab />
-            <Today date={date} setDate={() => {}} onCreate={() => {}} onEdit={() => {}} onOpen={() => {}} />
+            <Today date={date} setDate={() => {}} onCreate={() => {}} onEdit={() => {}} onOpen={() => {}} onReview={() => {}} />
           </AuthProvider>
         </StoreProvider>
       </I18nProvider>,

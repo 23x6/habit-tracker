@@ -1,16 +1,17 @@
 import { today as todayKey } from './date';
 import { missingExamples } from './examples';
-import { defaultSettings, uid, type Analysis, type Completion, type Entry, type Habit, type JournalEntry, type Settings } from './model';
+import { defaultSettings, uid, type Analysis, type Completion, type Entry, type Habit, type JournalEntry, type Review, type Settings } from './model';
 
 // Versioned IndexedDB schema. Each upgrade step only adds; existing records are never rewritten.
 //   v1: habits, entries, meta(settings)
 //   v2: + analyses, journal
 //   v3: + completions ("X-mal pro Woche"), + outbox / versions / conflicts (sync bookkeeping)
+//   v4: + reviews (weekly review, one per explicit week range)
 //
 // Each database is a separate partition: `still` holds local-only data, `still-account-<userId>` caches one
 // account. Every handle is bound to its database, so a write that finishes after an account switch can never
 // land in another account's cache.
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 /** Error message code for an upgrade blocked by another open tab (translated by the UI). */
 export const DB_BLOCKED = 'db-blocked';
 export const LOCAL_DB = 'still';
@@ -23,17 +24,18 @@ export interface Snapshot {
   analyses: Analysis[];
   journal: JournalEntry[];
   completions: Completion[];
+  reviews: Review[];
 }
 
-export const emptySnapshot = (): Snapshot => ({ habits: [], entries: [], settings: defaultSettings, analyses: [], journal: [], completions: [] });
+export const emptySnapshot = (): Snapshot => ({ habits: [], entries: [], settings: defaultSettings, analyses: [], journal: [], completions: [], reviews: [] });
 
-export type Kind = 'habit' | 'entry' | 'completion' | 'analysis' | 'journal' | 'settings';
-export const KINDS: Kind[] = ['habit', 'entry', 'completion', 'analysis', 'journal', 'settings'];
-const DATA_STORES = ['habits', 'entries', 'completions', 'analyses', 'journal', 'meta'] as const;
+export type Kind = 'habit' | 'entry' | 'completion' | 'analysis' | 'journal' | 'review' | 'settings';
+export const KINDS: Kind[] = ['habit', 'entry', 'completion', 'analysis', 'journal', 'review', 'settings'];
+const DATA_STORES = ['habits', 'entries', 'completions', 'analyses', 'journal', 'reviews', 'meta'] as const;
 const ALL_STORES = [...DATA_STORES, 'outbox', 'versions', 'conflicts'] as const;
 type Store = (typeof ALL_STORES)[number];
-const STORE_OF: Record<Kind, Store> = { habit: 'habits', entry: 'entries', completion: 'completions', analysis: 'analyses', journal: 'journal', settings: 'meta' };
-const SNAP_OF: Record<Exclude<Kind, 'settings'>, keyof Snapshot> = { habit: 'habits', entry: 'entries', completion: 'completions', analysis: 'analyses', journal: 'journal' };
+const STORE_OF: Record<Kind, Store> = { habit: 'habits', entry: 'entries', completion: 'completions', analysis: 'analyses', journal: 'journal', review: 'reviews', settings: 'meta' };
+const SNAP_OF: Record<Exclude<Kind, 'settings'>, keyof Snapshot> = { habit: 'habits', entry: 'entries', completion: 'completions', analysis: 'analyses', journal: 'journal', review: 'reviews' };
 
 export const keyOf = (kind: Kind, id: string) => `${kind}|${id}`;
 
@@ -110,6 +112,9 @@ export class StillDb {
       db.createObjectStore('outbox', { keyPath: 'key' });
       db.createObjectStore('versions');
       db.createObjectStore('conflicts', { keyPath: 'key' });
+    }
+    if (oldVersion < 4) {
+      db.createObjectStore('reviews', { keyPath: 'id' });
     }
   }
 
@@ -188,15 +193,16 @@ export class StillDb {
   async loadAll(): Promise<Snapshot> {
     const db = await this.open();
     const t = db.transaction(DATA_STORES, 'readonly');
-    const [habits, entries, settings, analyses, journal, completions] = await Promise.all([
+    const [habits, entries, settings, analyses, journal, completions, reviews] = await Promise.all([
       req<Habit[]>(t.objectStore('habits').getAll()),
       req<Entry[]>(t.objectStore('entries').getAll()),
       req<Settings | undefined>(t.objectStore('meta').get('settings')),
       req<Analysis[]>(t.objectStore('analyses').getAll()),
       req<JournalEntry[]>(t.objectStore('journal').getAll()),
       req<Completion[]>(t.objectStore('completions').getAll()),
+      req<Review[]>(t.objectStore('reviews').getAll()),
     ]);
-    return { habits, entries, settings: { ...defaultSettings, ...settings }, analyses, journal, completions };
+    return { habits, entries, settings: { ...defaultSettings, ...settings }, analyses, journal, completions, reviews };
   }
 
   // ---------- writes ----------

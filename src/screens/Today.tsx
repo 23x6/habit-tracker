@@ -17,9 +17,10 @@ interface Props {
   onCreate: () => void;
   onEdit: (h: Habit) => void;
   onOpen: (h: Habit) => void;
+  onReview: () => void;
 }
 
-export function Today({ date, setDate, onCreate, onEdit, onOpen }: Props) {
+export function Today({ date, setDate, onCreate, onEdit, onOpen, onReview }: Props) {
   const t = useT();
   const { habits, today, getEntry, reorder, addExamples, analyses, completions, settings } = useStore();
   const [analysisFor, setAnalysisFor] = useState<Habit | null>(null);
@@ -71,7 +72,7 @@ export function Today({ date, setDate, onCreate, onEdit, onOpen }: Props) {
 
   return (
     <div className="screen today-screen">
-      {active.length > 0 && <Dashboard date={date} />}
+      {active.length > 0 && <Dashboard date={date} onReview={onReview} />}
       <header className="today-head">
         <div className="head-top">
           <span className="mobile-only"><SaveStatus /></span>

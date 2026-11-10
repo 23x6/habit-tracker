@@ -25,7 +25,7 @@ Supabase's free tier is enough to start. Nothing paid is activated by this proje
 
 1. **Create a project** at https://supabase.com/dashboard.
 2. **Create the database schema.** Either:
-   - open *SQL Editor*, paste the contents of `supabase/migrations/20261110000000_still_records.sql` and run it; or
+   - open *SQL Editor* and run each file in `supabase/migrations/` in name order (`20261110000000_still_records.sql`, then `20261111000000_reviews.sql`); or
    - with the Supabase CLI: `npx supabase link --project-ref <ref>` and then `npx supabase db push`.
 3. **Configure Auth.** Under *Authentication → Sign In / Providers → Email*:
    - keep *Email* enabled and *Confirm email* on.
@@ -122,6 +122,17 @@ To test without the cloud, `npx supabase start` runs a complete local stack, inc
   - Only changes that were committed locally can survive a crash; text typed in the last moment before the debounce or a blur may be lost.
   - Changes that haven't synced yet exist only in this browser's storage on this device.
   - Nothing relies on `beforeunload` or a last-second network request.
+
+## Progress overview and weekly review
+- **Statistics:**
+  - a 7-day / 30-day switch with the exact local date range;
+  - daily and weekday habits show completed of scheduled days, as a count next to the percentage, using the rule, start date and archive periods in force on each day; today shows as still open;
+  - weekly goals list finished calendar weeks as results and the running week separately ("1 von 2 Analysen"); weeks reaching past the selected range are marked with `*`.
+- **Weekly review** (button "Wochenrückblick" in Statistics; on the last two days of a week also a link in the dashboard):
+  - opens on the current week, with arrows for earlier weeks;
+  - shows daily completions and weekly goals, the week's journal notes and analysis learnings (expandable), and three optional prompts;
+  - the text is kept as a local draft while typing; "Sichern" stores one review per account and explicit week range, synced and conflict-safe like journal text;
+  - reviews keep their original dates when the week start changes, and the review screen offers them for overlapping weeks.
 
 ## Data and sync
 

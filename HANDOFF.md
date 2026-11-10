@@ -65,6 +65,89 @@ Email delivery:
 - Supabase's built-in email service only sends to addresses of the project's organization members and is heavily rate-limited.
 - For other people to register, configure custom SMTP (Authentication → Emails → SMTP Settings) with a provider of your choice. Not done; it needs the user's decision and possibly a paid plan.
 
+## Iteration 9 (2026-11-11): progress overview (7 / 30 days) and weekly review
+### Statistics (`screens/Stats.tsx`, logic in `lib/review.ts`)
+- **Period switch** "7 Tage / 30 Tage": the last 7 or 30 local calendar days including today, with the exact range ("8.–14. Nov. 2026", via `formatRange`). The choice is remembered per device (`still-stats-span`).
+- **Daily habits** (`dailyStats`):
+  - completed of scheduled days per habit, with the count next to the percentage;
+  - each day uses the rule, target, start date and pauses in force on that day (`rate`/`isScheduled`/`targetAt`), so changes never rewrite history;
+  - today counts only once completed; otherwise it shows as "heute noch offen" (numeric: "heute 3/20 Seiten – noch offen");
+  - a note explains that the activity streak counts any activity, while here only a reached goal counts.
+- **Weekly goals** (`goalStats`):
+  - analysis and "X-mal pro Woche" goals, per calendar week of the configured week start, with the rule in force at the week's start;
+  - finished weeks overlapping the range are results ("1 von 1 abgeschlossener Woche erreicht", per week "2 von 2 Analysen · erreicht");
+  - the running week is listed separately ("Diese Woche (…) · läuft noch – 1 von 2 Analysen");
+  - weeks that reach outside the range are marked `*` and explained: the whole week is counted.
+- **Empty period:** a DE/EN message suggesting a habit or a longer period. The old week/month summary cards and the 30-day list were replaced by this overview; the activity heatmap stays.
+
+### Weekly review (`screens/WeeklyReview.tsx`)
+- **Opening it:**
+  - from the "Wochenrückblick" button in Statistics;
+  - from a compact dashboard link on the last two days of the week (`reviewDue`); it says "ansehen" once a review exists.
+  - It always opens on the current week; the arrows move by week on the configured week start, and "next" stops at the current week.
+- **Order on one mobile screen:**
+  1. daily completions;
+  2. weekly goal results;
+  3. an expandable "Notizen und Erkenntnisse der Woche (n)" list (journal notes and saved analysis learnings of that week);
+  4. the three prompts: „Was lief gut?“, „Was hat mich gebremst?“, „Was ändere ich nächste Woche?“ (EN: "What went well?", "What held me back?", "What will I change next week?").
+- **Saving:**
+  - while typing, `useDraft` keeps a local draft (per partition, never synced);
+  - "Sichern" writes the review record (outbox, sync);
+  - clearing all three prompts and saving removes the record.
+  - If a newer version arrives by sync while nothing was typed, the form shows it.
+- **Week start changes:** reviews are stored under their explicit range (`id = <weekStart>_<weekEnd>`). When the week start changes, `overlappingReviews` lists earlier reviews whose dates overlap the shown week, with a button to open them under their original dates.
+
+### Storage, sync, export
+- **Model:** `Review { id, weekStart, weekEnd, wentWell, heldBack, nextWeek, createdAt, updatedAt }`.
+- **IndexedDB v4:** adds the `reviews` store (additive upgrade). The partitions are unchanged, so each account has its own reviews and drafts.
+- **Sync:** new record kind `review`, in `PRESERVE`, so conflicting texts are kept for the user like journal text. The conflict sheet shows the week range and the three answers.
+- **Validation:** `reviewErrors` (range of exactly 7 days, id matches the range, text limits, at least one answer) and `cleanRecord('review')` for pulls.
+- **Export/import:** format version 4 includes `reviews`. Versions 1–3 still import (no reviews). The import dialog shows the review count.
+- **Account import:** local reviews are added to the account unless the account already has one for the same range (kept, never overwritten).
+- **Fix in `useDraft`:** typing again after a save (form still open) is a draft again. The review form doesn't mark its draft as committed: the draft clears itself once it equals the saved text, so text typed during a save isn't lost.
+
+### Supabase migration (required before deploying this version)
+- `supabase/migrations/20261111000000_reviews.sql` replaces the check constraint `records_kind_check` so that `kind` may also be `review`. RLS policies, privileges and `push_changes` are unchanged and apply to reviews as to all other records.
+- **Why it must come first:** the old constraint rejects a review, and `push_changes` then fails for the whole batch, so sync stalls (nothing is lost; changes wait in the outbox). A test reproduces exactly this.
+- The test backend (`src/test/server.ts`) now applies all migrations in file order (twice, to prove re-runs are safe). `createServer(grants, upTo)` can stop earlier to test an upgrade.
+
+### Verification
+- `npm run typecheck` clean, `npm test` **152/152** (21 new), `npm run build` OK.
+- **`lib/review.test.ts`:**
+  - **Weekday-only habit:** Mon/Wed/Fri over 7 days (1/2, today open) and 30 days (1/12, dates listed in the test).
+  - **Numeric target changed mid-period:** 10 → 20 pages; 15 pages count before the change, not after. 3 of 20 today earn an activity-streak day but stay open.
+  - **Archive period and start date.**
+  - **Empty week:** no rows.
+  - **Partial edge weeks and the running week:** "1 von 2 Analysen".
+  - **New Year week:** 2025-12-29 – 2026-01-04 with Monday and Sunday starts; the range label shows both years.
+  - **Analysis moved** from one week to the previous one.
+  - **"2× pro Woche" completions.**
+  - **Review records:** creation, emptying, overlap after a week-start change, validation, export v4 and import of v3, `reviewDue`.
+- **`lib/reviewSync.test.ts`** (real migrations in PGlite, RLS active):
+  - a project with only the first migration rejects reviews; after applying the new one (also twice, and with the first re-run afterwards) they sync and old rows stay;
+  - **offline edit:** the app is closed while offline; the text is back after reopening; one more failed attempt, then reconnection; the second device receives it;
+  - an earlier week's review is edited later (version 2);
+  - **concurrent edits** on phone and laptop: a conflict with both texts, the server text shown meanwhile, resolved for the laptop, and the phone receives it;
+  - two accounts with a review for the same week stay separate; RLS blocks cross-account updates.
+- **`screens/review.test.tsx`** (jsdom, real store and IndexedDB):
+  - typed text survives closing the app as a draft and isn't a stored review;
+  - after "Sichern" and reopening, the saved text and "Gesichert …" appear;
+  - an earlier week is edited twice (one record), and "next" is disabled on the current week;
+  - after switching to Sunday weeks, the Monday review is offered and opens with its text;
+  - switching accounts shows only that account's review and draft.
+- **Browser (Chromium via Playwright, dev server, clock set to Saturday 2026-11-14, data loaded through the real JSON import):**
+  - **Statistics, 7 days (8.–14. Nov.):** Gym (Mo/Mi/Fr) 67 % 2/3; Lesen 50 % 3/6 with "heute 3/20 Seiten – noch offen"; total 5 of 9. Substack: Nov 2–8 "2 von 2 Analysen · erreicht" with `*`, this week "1 von 2 Analysen". All match the records by hand.
+  - **30 days:** "16. Okt. – 14. Nov. 2026".
+  - **Review, current week:** Gym 2/3, Lesen 2/5 with today open, notes (2) = journal note Nov 10 + analysis Nov 11.
+  - **Review, previous week:** Gym 3/3, Lesen 2/7, Substack 2/2; the imported review text is in the prompts.
+  - **Dashboard link** on Saturday: "Die Woche endet bald. Wochenrückblick öffnen".
+  - **DE and EN** at 390 and 1440 px: no horizontal overflow, no page errors.
+- **Not verified:**
+  - a real Supabase project (the migration has to be applied there, see above);
+  - two real devices;
+  - iPhone Safari (layout, keyboard over the prompts, draft restore after the app is killed);
+  - VoiceOver.
+
 ## Iteration 8 (2026-11-10): flame polish, idle motion, animation previews, name RYVO
 The user moved the flame polish ahead of the statistics/weekly-review milestone. That milestone had not been started (no code and no uncommitted work for it), so nothing of it was touched. Streak rules, triggers and deduplication are unchanged (`lib/streak.ts` untouched).
 

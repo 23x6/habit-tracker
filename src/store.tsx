@@ -5,8 +5,9 @@ import { emptySnapshot, StillDb, type Conflict, type Kind, type Op, type Snapsho
 import { missingExamples } from './lib/examples';
 import {
   ALL_DAYS, completionId, entryId, isArchived, makeRule, ruleAt, uid, withRule,
-  type Analysis, type Completion, type Entry, type Habit, type JournalEntry, type Settings,
+  type Analysis, type Completion, type Entry, type Habit, type JournalEntry, type Review, type Settings,
 } from './lib/model';
+import { toReview, type ReviewDraft } from './lib/review';
 import { supabase, supabaseRemote } from './lib/remote';
 import { SyncManager, type SyncState } from './lib/sync';
 import { makeCompletion, toAnalysis, toJournal, type AnalysisDraft, type JournalDraft } from './lib/weekly';
@@ -54,6 +55,7 @@ interface Store {
   analyses: Analysis[];
   journal: JournalEntry[];
   completions: Completion[];
+  reviews: Review[];
   /** null in local-only mode. */
   sync: SyncState | null;
   conflicts: Conflict[];
@@ -74,6 +76,8 @@ interface Store {
   deleteAnalysis: (id: string) => Promise<void>;
   saveJournal: (id: string, d: JournalDraft) => Promise<void>;
   deleteJournal: (id: string) => Promise<void>;
+  /** Saves the review of [start, end]; with every prompt empty the stored review is removed. */
+  saveReview: (start: DateKey, end: DateKey, d: ReviewDraft) => Promise<void>;
   /** Adds (or, one-per-day, toggles off) a completion on `date`, with undo. */
   toggleCompletion: (habit: Habit, date: DateKey) => Promise<void>;
   /** Creates or edits a completion (`prev`) on `date`. */
@@ -118,7 +122,7 @@ export const useStore = () => {
   return s;
 };
 
-const LIST: Record<Exclude<Kind, 'settings'>, keyof Snapshot> = { habit: 'habits', entry: 'entries', completion: 'completions', analysis: 'analyses', journal: 'journal' };
+const LIST: Record<Exclude<Kind, 'settings'>, keyof Snapshot> = { habit: 'habits', entry: 'entries', completion: 'completions', analysis: 'analyses', journal: 'journal', review: 'reviews' };
 
 /** Applies ops to an in-memory snapshot (mirrors StillDb.write). */
 export function applyOps(s: Snapshot, ops: Op[]): Snapshot {
@@ -252,7 +256,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
         }
         snapRef.current = applyOps(snapRef.current, ops); // the next queued write sees this one at once
         setSnap(snapRef.current);
-        const dates = ops.flatMap((o) => (o.kind !== 'settings' && o.kind !== 'habit' && o.kind !== 'journal' && o.rec ? [(o.rec as { date: DateKey }).date] : []));
+        const dates = ops.flatMap((o) => (o.kind !== 'settings' && o.kind !== 'habit' && o.kind !== 'journal' && o.kind !== 'review' && o.rec ? [(o.rec as { date: DateKey }).date] : []));
         setLocalWrite((w) => ({ n: w.n + 1, dates }));
         return undo;
       });
@@ -439,6 +443,17 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
 
   const deleteJournal = useCallback((id: string) => commitWithUndo([{ kind: 'journal', id }], tRef.current.toast.entryDeleted), [commitWithUndo]);
 
+  const saveReview = useCallback(
+    async (start: DateKey, end: DateKey, d: ReviewDraft) => {
+      const prev = snapRef.current.reviews.find((r) => r.weekStart === start && r.weekEnd === end);
+      const rec = toReview(start, end, d, prev, Date.now());
+      if (!rec && !prev) return;
+      await commit([rec ? { kind: 'review', id: rec.id, rec } : { kind: 'review', id: prev!.id }]);
+      showToast(rec ? tRef.current.toast.reviewSaved : tRef.current.toast.reviewCleared);
+    },
+    [commit, showToast],
+  );
+
   const toggleCompletion = useCallback(
     async (habit: Habit, date: DateKey) => {
       if (date > todayKey()) return showToast(tRef.current.toast.futureDay);
@@ -518,9 +533,9 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
 
   const value = useMemo<Store>(
     () => ({
-      partition, snapshot: snap, status, error, habits, settings: snap.settings, today, toast, analyses: snap.analyses, journal: snap.journal,
+      partition, snapshot: snap, status, error, habits, settings: snap.settings, today, toast, analyses: snap.analyses, journal: snap.journal, reviews: snap.reviews,
       completions: snap.completions, sync, conflicts, getEntry, entriesOf, createHabit, updateHabit, setArchived, deleteHabit,
-      reorder, setEntry, toggleEntry, stepEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion,
+      reorder, setEntry, toggleEntry, stepEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, saveReview, toggleCompletion, saveCompletion,
       deleteCompletion, addExamples, replaceAll, applyOps: applyOpsCb, resolveConflict, syncNow: () => manager.current?.schedule(0),
       saving: savingCount > 0,
       localWrite,
@@ -536,7 +551,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
       drafts,
       showToast, dismissToast: () => setToast(null),
     }),
-    [partition, status, error, habits, snap, today, toast, sync, conflicts, savingCount, localWrite, prefs, saveError, drafts, commit, getEntry, entriesOf, createHabit, updateHabit, setArchived, deleteHabit, reorder, setEntry, toggleEntry, stepEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion, deleteCompletion, addExamples, replaceAll, applyOpsCb, resolveConflict, showToast],
+    [partition, status, error, habits, snap, today, toast, sync, conflicts, savingCount, localWrite, prefs, saveError, drafts, commit, getEntry, entriesOf, createHabit, updateHabit, setArchived, deleteHabit, reorder, setEntry, toggleEntry, stepEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, saveReview, toggleCompletion, saveCompletion, deleteCompletion, addExamples, replaceAll, applyOpsCb, resolveConflict, showToast],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -1,5 +1,5 @@
-import { isValidKey } from './date';
-import { completionId, defaultSettings, entryId, SCHEMA_VERSION, type Analysis, type Completion, type Entry, type Habit, type JournalEntry, type Settings } from './model';
+import { diffDays, isValidKey } from './date';
+import { completionId, defaultSettings, entryId, SCHEMA_VERSION, type Analysis, type Completion, type Entry, type Habit, type JournalEntry, type Review, type Settings } from './model';
 import type { Kind, Snapshot } from './db';
 import { ICON_NAMES } from './icons';
 import { isHttpUrl } from './weekly';
@@ -103,6 +103,17 @@ export function journalErrors(j: unknown): string[] {
   return e;
 }
 
+export function reviewErrors(r: unknown): string[] {
+  if (!isObj(r)) return ['invalid'];
+  const e: string[] = [];
+  if (!isValidKey(r.weekStart) || !isValidKey(r.weekEnd) || r.weekEnd < r.weekStart || diffDays(r.weekStart, r.weekEnd) !== 6) e.push('dateInvalid');
+  else if (r.id !== `${r.weekStart}_${r.weekEnd}`) e.push('rangeMismatch');
+  if (!isStr(r.wentWell, 20000) || !isStr(r.heldBack, 20000) || !isStr(r.nextWeek, 20000)) e.push('textInvalid');
+  else if (!r.wentWell.trim() && !r.heldBack.trim() && !r.nextWeek.trim()) e.push('noContent');
+  if (!isNum(r.createdAt) || !isNum(r.updatedAt)) e.push('timestampInvalid');
+  return e;
+}
+
 export function settingsOk(s: unknown): s is Settings {
   return isObj(s) && (s.weekStart === 0 || s.weekStart === 1) && ['system', 'reduce', 'full'].includes(s.motion as string) && typeof s.remindersEnabled === 'boolean';
 }
@@ -123,6 +134,9 @@ const cleanAnalysis = (a: Analysis): Analysis => ({
   id: a.id, habitId: a.habitId, date: a.date, title: a.title.trim(), url: a.url.trim(), learnings: a.learnings, createdAt: a.createdAt, updatedAt: a.updatedAt,
 });
 const cleanJournal = (j: JournalEntry): JournalEntry => ({ id: j.id, date: j.date, title: j.title, notes: j.notes, learned: j.learned, createdAt: j.createdAt, updatedAt: j.updatedAt });
+const cleanReview = (r: Review): Review => ({
+  id: r.id, weekStart: r.weekStart, weekEnd: r.weekEnd, wentWell: r.wentWell, heldBack: r.heldBack, nextWeek: r.nextWeek, createdAt: r.createdAt, updatedAt: r.updatedAt,
+});
 const cleanSettings = (s: Settings): Settings => ({ weekStart: s.weekStart, motion: s.motion, remindersEnabled: s.remindersEnabled });
 
 /** Validates and sanitizes one record received from the server. Returns null if it must not be stored. */
@@ -138,6 +152,8 @@ export function cleanRecord(kind: Kind, data: unknown): unknown | null {
       return analysisErrors(data).length ? null : cleanAnalysis(data as Analysis);
     case 'journal':
       return journalErrors(data).length ? null : cleanJournal(data as JournalEntry);
+    case 'review':
+      return reviewErrors(data).length ? null : cleanReview(data as Review);
     case 'settings':
       return settingsOk(data) ? cleanSettings(data) : null;
   }
@@ -145,7 +161,7 @@ export function cleanRecord(kind: Kind, data: unknown): unknown | null {
 
 /**
  * Validates an import completely before anything touches storage and returns all problems found (capped).
- * Accepts versions 1–3 and migrates older files to the current shape.
+ * Accepts versions 1–4 and migrates older files to the current shape (reviews exist from version 4).
  */
 export function validateImport(raw: unknown, m: Messages = de): ImportResult {
   const t = m.io;
@@ -154,12 +170,13 @@ export function validateImport(raw: unknown, m: Messages = de): ImportResult {
 
   if (!isObj(raw) || raw.app !== 'still') return { ok: false, errors: [t.notStill] };
   const version = raw.version;
-  if (version !== 1 && version !== 2 && version !== 3) return { ok: false, errors: [t.version(String(version))] };
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4) return { ok: false, errors: [t.version(String(version))] };
   if (!Array.isArray(raw.habits) || !Array.isArray(raw.entries)) return { ok: false, errors: [t.missingCore] };
   const rawAnalyses = version === 1 ? [] : raw.analyses;
   const rawJournal = version === 1 ? [] : raw.journal;
   const rawCompletions = version < 3 ? [] : raw.completions;
-  if (!Array.isArray(rawAnalyses) || !Array.isArray(rawJournal) || !Array.isArray(rawCompletions)) return { ok: false, errors: [t.missingExtra] };
+  const rawReviews = version < 4 ? [] : raw.reviews;
+  if (!Array.isArray(rawAnalyses) || !Array.isArray(rawJournal) || !Array.isArray(rawCompletions) || !Array.isArray(rawReviews)) return { ok: false, errors: [t.missingExtra] };
 
   const kinds = new Map<string, Habit['kind']>();
   raw.habits.forEach((h: unknown, i: number) => {
@@ -185,6 +202,7 @@ export function validateImport(raw: unknown, m: Messages = de): ImportResult {
   unique(rawCompletions, t.completion, 'duplicateId', (x) => completionErrors(x, kindOf));
   unique(rawAnalyses, t.analysis, 'duplicateId', (x) => analysisErrors(x, kindOf));
   unique(rawJournal, t.journal, 'duplicateId', journalErrors);
+  unique(rawReviews, t.review, 'duplicateId', reviewErrors);
 
   let settings: Settings = defaultSettings;
   if (raw.settings !== undefined) {
@@ -202,6 +220,7 @@ export function validateImport(raw: unknown, m: Messages = de): ImportResult {
       completions: (rawCompletions as Completion[]).map(cleanCompletion),
       analyses: (rawAnalyses as Analysis[]).map(cleanAnalysis),
       journal: (rawJournal as JournalEntry[]).map(cleanJournal),
+      reviews: (rawReviews as Review[]).map(cleanReview),
       settings,
     },
   };

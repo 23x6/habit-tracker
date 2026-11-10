@@ -32,7 +32,7 @@ export interface Remote {
 }
 
 /** Text the user wrote: conflicting versions are preserved, never silently overwritten. */
-const PRESERVE: Kind[] = ['journal', 'analysis'];
+const PRESERVE: Kind[] = ['journal', 'analysis', 'review'];
 const PUSH_BATCH = 100;
 const PULL_LIMIT = 500;
 /** Rows younger than this are fetched again next time, so a slower concurrent commit with a lower seq isn't missed. */

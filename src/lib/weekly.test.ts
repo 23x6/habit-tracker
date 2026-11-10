@@ -145,7 +145,7 @@ describe('database', () => {
     expect(s.analyses).toHaveLength(0);
   });
 
-  it('migrates a v1 database without losing data and without adding examples', async () => {
+  it('migrates a v1 database to the current version without losing data and without adding examples', async () => {
     const h = weekly({ id: 'old', name: 'Lesen', kind: 'binary', rules: [{ from: '2026-01-05', days: ALL_DAYS, target: 1 }] });
     await new Promise<void>((resolve, reject) => {
       const r = indexedDB.open('still', 1);
@@ -173,6 +173,7 @@ describe('database', () => {
     expect(s.settings.weekStart).toBe(0);
     expect(s.analyses).toEqual([]);
     expect(s.journal).toEqual([]);
+    expect(s.reviews).toEqual([]); // v4 store added on upgrade
   });
 
   it('repeated saves of the same analysis (double click / retry) create one record; edit and delete persist', async () => {
