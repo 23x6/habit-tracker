@@ -44,8 +44,8 @@ export async function notify(habits: Habit[], fallback: (msg: string) => void, b
     if (permission() === 'granted') {
       try {
         const reg = await navigator.serviceWorker?.getRegistration();
-        if (reg) await reg.showNotification('Still', { body: text, tag: h.id, icon: './icon-192.png' });
-        else new Notification('Still', { body: text, tag: h.id });
+        if (reg) await reg.showNotification('RYVO', { body: text, tag: h.id, icon: './icon-192.png' });
+        else new Notification('RYVO', { body: text, tag: h.id });
         continue;
       } catch { /* fall through to in-app */ }
     }

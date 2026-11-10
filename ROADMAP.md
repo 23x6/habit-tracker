@@ -1,4 +1,4 @@
-# Roadmap
+# Roadmap (RYVO)
 
 Live: https://still-ashy-seven.vercel.app/ (Vercel project `still`, deployed from `feature/still-app`). Details and verification: HANDOFF.md.
 
@@ -21,15 +21,23 @@ Live: https://still-ashy-seven.vercel.app/ (Vercel project `still`, deployed fro
    - per-account deduplication.
 
    Details: HANDOFF.md, "Iteration 7".
+8. **Flame polish (this iteration):**
+   - redrawn flame (coral/orange/peach, crisp outlined number) and a frosted blue state;
+   - idle breathing loop on the dashboard;
+   - smoother celebration and recovery;
+   - animation previews in Settings;
+   - visible name RYVO.
+
+   Details: HANDOFF.md, "Iteration 8".
 
 ## Next (named by the user, not started)
-- Weekly reviews.
+- **Statistics and weekly reviews** (next milestone; postponed by the user until the flame polish was done).
 - Reminders beyond the open app.
 - Pauses (planned breaks as a feature, beyond archiving).
 - Journal search.
 
 ## Open questions / decisions to confirm
 - **Streak and weekly goals.** Days with only a weekly goal in force can *earn* a streak day but never *break* it. Otherwise everyone with a "3× pro Woche" goal would need activity every day. A day where only an unscheduled habit was recorded (e.g. a weekday habit done on Saturday) is neutral, per the "neutral days neither increase nor break" rule.
-- **References.** `design/` holds the flame image (JPG) and the motion reference (GIF). They were used as described in HANDOFF.md, "Iteration 7", and are kept out of Git and the deployment because they look like third-party material. The ice-break isn't in the GIF; it is our own reverse of its freeze. Real-device check is pending.
-- **Name.** The request says "RYVO". The app, manifest and stored-data identifiers still say "Still". A rename would be a separate, deliberate change (the stored-data identifiers must stay).
+- **References.** `design/` holds the flame image (JPG) and the motion reference (GIF). They were used as described in HANDOFF.md, "Iteration 7", and are kept out of Git and the deployment because they look like third-party material. The ice-break isn't in the GIF; it is our own reverse of its freeze. Real-device check is pending: use Settings → „Animationsvorschau“ on the iPhone.
+- **Name.** Done for everything visible (iteration 8). Stored-data identifiers, the export format id and the Vercel URL intentionally still say "still".
 - **"Skip the animation" setting.** It is stored per device (`localStorage`), not per account.

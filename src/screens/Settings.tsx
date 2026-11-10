@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { AccountSection, LangSwitch } from '../components/Account';
-import { readSkipWelcome, writeSkipWelcome } from '../components/Streak';
+import { FlamePreviewOverlay, readSkipWelcome, writeSkipWelcome, type FlamePreview } from '../components/Streak';
 import { useT } from '../i18n';
 import { Confirm, Segmented, Sheet } from '../components/ui';
 import { toExport, validateImport } from '../lib/io';
@@ -19,6 +19,7 @@ export function Settings() {
   const [importErrors, setImportErrors] = useState<string[] | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [skipWelcome, setSkipWelcome] = useState(readSkipWelcome);
+  const [preview, setPreview] = useState<{ kind: FlamePreview; id: number } | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const withReminder = habits.filter((h) => h.reminder && !isArchived(h)).length;
 
@@ -27,7 +28,7 @@ export function Settings() {
     const blob = new Blob([JSON.stringify(toExport({ habits, entries, settings, analyses, journal, completions }), null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `still-export-${todayKey()}.json`;
+    a.download = `ryvo-export-${todayKey()}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     showToast(t.toast.exported(habits.length, entries.length + completions.length, analyses.length, journal.length));
@@ -94,6 +95,17 @@ export function Settings() {
         </label>
         <p className="muted small">{t.streak.skipNote}</p>
       </section>
+
+      <section className="card" id="animation-preview">
+        <h2>{t.streak.preview.title}</h2>
+        <p className="muted small">{t.streak.preview.note}</p>
+        <div className="preview-grid">
+          {(['lit', 'celebrate', 'frozen', 'recover'] as const).map((k) => (
+            <button key={k} className="btn" onClick={() => setPreview({ kind: k, id: Date.now() })}>{t.streak.preview[k]}</button>
+          ))}
+        </div>
+      </section>
+      {preview && <FlamePreviewOverlay key={preview.id} kind={preview.kind} onClose={() => setPreview(null)} />}
 
       <section className="card">
         <h2>{t.settings.data}</h2>

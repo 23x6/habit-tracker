@@ -11,7 +11,7 @@ import { ALL_DAYS, type Habit } from '../lib/model';
 import { streakVerified, welcomeStep } from '../lib/streak';
 import type { SyncState } from '../lib/sync';
 import { StoreProvider, useStore } from '../store';
-import { StreakBadge, StreakCelebration, StreakWelcome, writeSkipWelcome } from './Streak';
+import { FlamePreviewOverlay, StreakBadge, StreakCelebration, StreakWelcome, writeSkipWelcome } from './Streak';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 // Node's own (disabled) `localStorage` global shadows jsdom's in this environment: provide a working one.
@@ -172,13 +172,15 @@ describe('streak welcome and dashboard badge', () => {
     expect(badge()).toBe('Aktiv-Serie: 2 Tage. Verlauf und Regeln öffnen');
   });
 
-  it('dashboard badge updates quietly: no animation on reload or when the streak grows', async () => {
+  it('dashboard badge updates quietly: only the idle loop, no one-shot animation on reload or when the streak grows', async () => {
     await act(async () => root.render(tree('still-streak-c', null, null, <StreakBadge />)));
     await seed([1]);
     expect(badge()).toContain('1 Tag.');
     await act(async () => store.toggleEntry(read, T));
     await wait(60);
     expect(badge()).toContain('2 Tage');
+    expect(document.querySelector('.streak-badge svg')!.getAttribute('class')).toContain('anim-idle');
+    await act(async () => store.setSettings({ motion: 'reduce' }));
     expect(document.querySelector('.streak-badge svg')!.getAttribute('class')).toContain('anim-static');
   });
 });
@@ -312,5 +314,34 @@ describe('streak celebration', () => {
     expect(rolled()).toEqual([null, null]);
     expect(document.querySelector('.celebrate .flame text')!.textContent).toBe('2');
     expect(overlay()!.className).toContain('reduced');
+  });
+});
+
+describe('animation previews (Settings)', () => {
+  it('use the production overlay with sample numbers and write nothing: no entries, streak, freeze or dedup change', async () => {
+    let shown: string | null = null;
+    const show = (k: 'lit' | 'celebrate' | 'frozen' | 'recover') => <FlamePreviewOverlay key={k} kind={k} onClose={() => (shown = null)} />;
+    await act(async () => root.render(tree('still-prev', null, null, <StreakBadge />)));
+    await seed([2, 1]);
+    const before = { writes: store.localWrite.n, snap: JSON.stringify(store.snapshot), dedup: await store.prefs.load('streak-celebrated'), badge: badge() };
+
+    for (const k of ['lit', 'celebrate', 'frozen', 'recover'] as const) {
+      shown = k;
+      await act(async () => root.render(tree('still-prev', null, null, <><StreakBadge />{show(k)}</>)));
+      await wait(60);
+      expect(overlay()!.textContent).toContain('Vorschau');
+      if (k === 'lit') expect(flameAnim()).toContain('flame-lit anim-idle');
+      if (k === 'frozen') expect(flameAnim()).toContain('flame-frozen');
+      if (k === 'celebrate' || k === 'recover') expect(rolled()).toEqual(['5', '6']);
+      if (k === 'recover') expect(document.querySelectorAll('.celebrate .rv-shard')).toHaveLength(6);
+      await close();
+      expect(shown).toBeNull();
+    }
+    await act(async () => root.render(tree('still-prev', null, null, <StreakBadge />)));
+    await wait(60);
+    expect(store.localWrite.n).toBe(before.writes);
+    expect(JSON.stringify(store.snapshot)).toBe(before.snap);
+    expect(await store.prefs.load('streak-celebrated')).toBe(before.dedup);
+    expect(badge()).toBe(before.badge);
   });
 });

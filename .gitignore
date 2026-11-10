@@ -2,6 +2,7 @@ node_modules
 dist
 *.local
 still-export-*.json
+ryvo-export-*.json
 .playwright-mcp
 .env
 .env.*

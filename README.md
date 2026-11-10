@@ -1,8 +1,8 @@
-# Still
+# RYVO
 
 A calm, dark-gray habit tracker with weekly goals, a journal and optional cross-device sync. Installable, offline-first PWA built with React and TypeScript. German or English interface (German by default); works on iPhone, Android, macOS and Windows.
 
-Still works fully **without an account** (local mode: data only in this browser). With a **Supabase** backend configured, users can register, sign in and sync their data between devices.
+RYVO works fully **without an account** (local mode: data only in this browser). With a **Supabase** backend configured, users can register, sign in and sync their data between devices.
 
 ## Setup
 
@@ -157,7 +157,7 @@ App updates install in the background and are used from the next start. Local da
 
 1. Open the hosted URL in Safari once (HTTPS).
 2. Tap Share → **Zum Home-Bildschirm** (Add to Home Screen).
-3. Start Still from the home screen. After the first load it also works offline.
+3. Start RYVO from the home screen. After the first load it also works offline.
 
 Android Chrome: menu → *App installieren*. Desktop Chrome/Edge: the install icon in the address bar.
 
@@ -166,6 +166,6 @@ Android Chrome: menu → *App installieren*. Desktop Chrome/Edge: the install ic
 - **Only partly verified against a real Supabase project.** Sign-in and sync of a habit and its completion between two browser sessions of the same account were tested manually on desktop. Not yet tested against the real project: password reset, offline reconnect, conflict resolution, cross-user isolation (covered by automated RLS tests against the migration in PGlite) and real mobile devices.
 - **Sync isn't real-time:** it polls (on start, after edits, on focus, every 30 s).
 - **Structured conflicts:** for non-text records (e.g. a habit renamed differently on two devices), the server version wins.
-- **Reminders only fire while Still is open** (no push). Weekly goals have no reminders.
+- **Reminders only fire while RYVO is open** (no push). Weekly goals have no reminders.
 - **Local mode** keeps data only in this browser; Safari may evict website data after long inactivity. Export regularly or use an account.
 - **Week start:** changing it regroups past weeks; weekly targets stay stable.

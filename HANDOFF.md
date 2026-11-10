@@ -1,4 +1,4 @@
-# Still — Handoff
+# RYVO (formerly Still) — Handoff
 
 ## Status (2026-11-10)
 Iteration 3 is implemented: accounts and sync (Supabase), "X-mal pro Woche" goals, the dashboard ring, refined motion, and the desktop layout. Branch `feature/still-app`.
@@ -64,6 +64,88 @@ Supabase Auth (Authentication → URL Configuration):
 Email delivery:
 - Supabase's built-in email service only sends to addresses of the project's organization members and is heavily rate-limited.
 - For other people to register, configure custom SMTP (Authentication → Emails → SMTP Settings) with a provider of your choice. Not done; it needs the user's decision and possibly a paid plan.
+
+## Iteration 8 (2026-11-10): flame polish, idle motion, animation previews, name RYVO
+The user moved the flame polish ahead of the statistics/weekly-review milestone. That milestone had not been started (no code and no uncommitted work for it), so nothing of it was touched. Streak rules, triggers and deduplication are unchanged (`lib/streak.ts` untouched).
+
+### References
+Both files in `design/` were reviewed again. The GIF was read frame by frame in Chromium via WebCodecs `ImageDecoder` (101 frames, about 6 s). Taken from them:
+- three nested layers;
+- the number at the base, inside the inner flame, as a white numeral with a coloured outline;
+- colour rising from the base with a licking edge;
+- a blue frost state.
+
+Nothing is embedded; the artwork is drawn from scratch.
+
+### Artwork
+`Flame` in `components/Streak.tsx` is one component for the dashboard, overlay, details sheet and welcome.
+- **Silhouette:** a rounded outer flame with a gently tapered main tip and a small right tongue, a warm middle flame and a small inner flame at the base. The neon edge line is gone.
+- **Active:** coral-to-red outer flame, orange middle flame, peach inner flame, a soft peach highlight stroke on the left and a restrained glow (σ 6, opacity 0.36).
+- **Number:** white with a dark outline painted behind the fill (`paint-order: stroke`), sitting in the inner flame. Font size is 22, 16 or 12 for up to 2, 3 or 4+ digits (1234 checked).
+- **Frozen:** icy blue/cyan layers, a translucent frost sheen with a white inner rim, fine crystal lines and the snowflake badge, so it reads without colour.
+- **Cold:** gray outline. The day-strip icon uses the new silhouette.
+
+### Idle motion (dashboard badge, lit only)
+- A seamless 3.2 s loop:
+  - the outer and middle layers sway out of phase (`skewX` pivoting on the base, so the base stays anchored);
+  - the inner flame breathes and the glow follows;
+  - the number never moves.
+- It pauses while the page is hidden (`visibilitychange` toggles `html.page-hidden`). It is static with reduced motion (app setting or system).
+
+### Celebration (same trigger as before)
+- `FlameOverlay` is the shared overlay. `StreakCelebration` decides when it appears; the Settings previews use the same overlay.
+- **Sequence:**
+  1. The backdrop fades in and the card enters with a restrained spring (scale 0.88 → 1, slight overshoot).
+  2. Colour rises from the base (140–700 ms).
+  3. At 640 ms a warm pulse (scale 1.055 from the base, glow flare) and the counter rolls from the real old value; embers rise.
+  4. The text under the flame appears with the new count.
+  5. Hold, then fade and scale to 0.92.
+- **Duration, measured in Chromium** (appear to removal): **1.82 s** for a new day, **1.96 s** for a recovery.
+- **Roll blur without CSS filters:** each number has a sharp copy and a copy with a vertical SVG `feGaussianBlur`; they crossfade while moving. Safari ignores CSS `filter` on SVG children, but SVG filter elements work there.
+- **Wipe fallback:** `beginElementAt` starts the SMIL colour wipe, and a single timer (780 ms) then removes the clip. If SMIL never ran, the flame snaps to full colour instead of staying gray.
+- Dismissal, focus and typing behaviour are unchanged: a tap or Escape closes it at once, it never takes focus, and it is passive while a text field has focus.
+
+### Recovery
+1. Frozen flame with frost.
+2. Cracks spread (200–560 ms).
+3. At 560 ms the ice turns into six shards that drift a short distance and fade. Meanwhile the middle and inner layers of the warm flame grow from the base and the glow pulses.
+4. The counter rolls at 600 ms. The snowflake badge lifts away.
+
+A genuinely broken streak still uses the normal ignite (0 → 1) without ice.
+
+### Animation previews (Settings → „Animationsvorschau“)
+- Four buttons: Aktive Flamme, Neuer Serientag (5 → 6), Eingefrorene Flamme, Freeze-Rettung (5 → 6).
+- The overlay shows a „Vorschau“ label, and a note says nothing is saved.
+- They render `FlamePreviewOverlay`, which uses the production `FlameOverlay` and `Flame` with fixed sample numbers.
+- They read and write nothing: no store call, no entries, no streak change, no freeze, no celebration-dedup key, nothing to sync.
+
+### Name
+- The visible name is now **RYVO**: page title, home-screen name (manifest, Apple title), notifications, UI texts (DE/EN) and the export file name `ryvo-export-<date>.json`.
+- **Unchanged on purpose**, because changing them would orphan stored data or break old exports:
+  - IndexedDB names (`still`, `still-account-<id>`);
+  - `localStorage` keys (`still-*`);
+  - the export format id `app: "still"`, so old and new exports import both ways;
+  - the Vercel project and URL, and the package name.
+- An already installed home-screen icon may keep the old name until it is added again.
+
+### Verification
+- `npm run typecheck` clean, `npm test` **131/131**, `npm run build` OK.
+- **Tests:**
+  - the badge test now expects the idle loop, and `static` with reduced motion;
+  - a new test checks that all four previews show the production overlay (5 → 6 roll, 6 shards for recovery) and leave local writes, the snapshot, the dedup key and the badge unchanged.
+- **Browser (Chromium via Playwright, dev server):**
+  - **Frames:** seeked frames of both sequences (0–1800 ms) and real-time frames of a real check-off show gray → colour rising from the base → full colour, with no jump when the wipe clip is removed.
+  - **Real flow at 390 px, fresh profile:** a check-off showed the overlay 0 → 1 after about 50 ms; focus stayed on the check button; it was removed after about 1.8 s; a second check-off didn't replay; no horizontal overflow.
+  - **Idle frames 0–3200 ms:** only the tip sways; the number stays fixed.
+  - **Large numbers** 99, 365 and 1234 fit.
+  - **1440 px:** flame 300 px, no overflow.
+  - **Reduced motion:** `anim-fade`, no roll.
+- **Not verified:**
+  - Safari/iPhone: the SMIL start, the SVG blur filter, `transform-box` transforms on SVG, touch feel;
+  - VoiceOver;
+  - a real account across two devices.
+
+  Use the previews on the iPhone to check the look.
 
 ## Iteration 7 (2026-11-10): streak celebration, red/blue flame, ice-break recovery
 ### References (`design/`, local only; not committed, not deployed)

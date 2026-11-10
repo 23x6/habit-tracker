@@ -39,9 +39,9 @@ export const de = {
   app: {
     storageUnavailable: 'Speicher nicht verfügbar',
     storageUnavailableText: (err: string) =>
-      `Still konnte die lokale Datenbank nicht öffnen${err ? ` (${err})` : ''}. Im privaten Modus oder bei blockierten Website-Daten ist das nicht möglich.`,
+      `RYVO konnte die lokale Datenbank nicht öffnen${err ? ` (${err})` : ''}. Im privaten Modus oder bei blockierten Website-Daten ist das nicht möglich.`,
     offline: 'Offline · Änderungen werden lokal gespeichert',
-    blocked: 'Bitte andere geöffnete Still-Tabs schließen und neu laden.',
+    blocked: 'Bitte andere geöffnete RYVO-Tabs schließen und neu laden.',
     utilities: 'Sprache und Konto',
   },
   save: {
@@ -179,7 +179,7 @@ export const de = {
     start: 'Beginn',
     reminder: 'Erinnerung',
     removeReminder: 'Erinnerung entfernen',
-    reminderNote: 'Erinnerungen erscheinen nur, solange Still geöffnet ist. Details unter Einstellungen.',
+    reminderNote: 'Erinnerungen erscheinen nur, solange RYVO geöffnet ist. Details unter Einstellungen.',
     effectNextWeek: (date: string) => `Gilt ab ${date} (nächste Woche). Die laufende Woche und frühere Wochen behalten ihr Ziel.`,
     effectToday: 'Gilt ab heute. Vergangene Tage behalten ihre bisherigen Regeln.',
     effectPlanned: (date: string) => `Geplante Änderung gilt ab ${date}.`,
@@ -342,7 +342,7 @@ export const de = {
     },
     allowNotifications: 'Mitteilungen erlauben',
     reminderInfo: (n: number) =>
-      `${n} ${plural(n, 'Gewohnheit', 'Gewohnheiten')} mit Uhrzeit. Wichtig: Still verschickt keine Push-Nachrichten. Erinnerungen erscheinen nur, solange die App geöffnet ist – geschlossen oder im Hintergrund kann der Browser sie nicht zuverlässig zustellen. Ohne Erlaubnis erscheint der Hinweis innerhalb der App.`,
+      `${n} ${plural(n, 'Gewohnheit', 'Gewohnheiten')} mit Uhrzeit. Wichtig: RYVO verschickt keine Push-Nachrichten. Erinnerungen erscheinen nur, solange die App geöffnet ist – geschlossen oder im Hintergrund kann der Browser sie nicht zuverlässig zustellen. Ohne Erlaubnis erscheint der Hinweis innerhalb der App.`,
     appearance: 'Darstellung',
     weekStart: 'Wochenbeginn',
     monday: 'Montag',
@@ -362,8 +362,8 @@ export const de = {
     import: 'JSON importieren …',
     clearAccount: 'Alle Kontodaten löschen …',
     clearLocal: 'Alle Daten löschen …',
-    footerAccount: 'Still · Konto · funktioniert auch offline',
-    footerLocal: 'Still · lokal gespeichert · funktioniert offline',
+    footerAccount: 'RYVO · Konto · funktioniert auch offline',
+    footerLocal: 'RYVO · lokal gespeichert · funktioniert offline',
     fileTooLarge: 'Datei ist zu groß.',
     notJson: 'Die Datei ist kein gültiges JSON.',
     importTitle: 'Import ersetzt alle Daten',
@@ -467,7 +467,7 @@ export const de = {
     learned: (s: string) => `Gelernt: ${s}`,
   },
   io: {
-    notStill: 'Keine Still-Exportdatei.',
+    notStill: 'Keine RYVO-Exportdatei.',
     version: (v: string) => `Nicht unterstützte Version: ${v}.`,
     missingCore: 'Gewohnheiten oder Einträge fehlen.',
     missingExtra: 'Analysen, Journal oder Erledigungen fehlen.',
@@ -524,6 +524,16 @@ export const de = {
     dayLabel: (date: string, state: string) => `${date}: ${state}`,
     celebrate: { start: 'Neue Serie gestartet', continue: 'Neuer Tag geschafft', recovery: 'Das Eis ist gebrochen – deine Serie läuft weiter' },
     dismissHint: 'Tippen oder Escape schließt.',
+    preview: {
+      title: 'Animationsvorschau',
+      note: 'Nur zum Ansehen: Die Vorschau speichert nichts, verändert keine Serie, verbraucht keinen Freeze und wird nicht synchronisiert.',
+      lit: 'Aktive Flamme',
+      celebrate: 'Neuer Serientag (5 → 6)',
+      frozen: 'Eingefrorene Flamme',
+      recover: 'Freeze-Rettung (5 → 6)',
+      badge: 'Vorschau',
+      tapToClose: 'Tippen oder Escape schließt die Vorschau.',
+    },
   },
   reminder: { body: (name: string) => `Noch offen: ${name}` },
 };
@@ -566,9 +576,9 @@ export const en: Messages = {
   app: {
     storageUnavailable: 'Storage unavailable',
     storageUnavailableText: (err: string) =>
-      `Still could not open its local database${err ? ` (${err})` : ''}. This isn't possible in private mode or with blocked site data.`,
+      `RYVO could not open its local database${err ? ` (${err})` : ''}. This isn't possible in private mode or with blocked site data.`,
     offline: 'Offline · changes are saved locally',
-    blocked: 'Please close other open Still tabs and reload.',
+    blocked: 'Please close other open RYVO tabs and reload.',
     utilities: 'Language and account',
   },
   save: {
@@ -702,7 +712,7 @@ export const en: Messages = {
     start: 'Start',
     reminder: 'Reminder',
     removeReminder: 'Remove reminder',
-    reminderNote: 'Reminders only appear while Still is open. Details in Settings.',
+    reminderNote: 'Reminders only appear while RYVO is open. Details in Settings.',
     effectNextWeek: (date: string) => `Applies from ${date} (next week). The current and earlier weeks keep their goal.`,
     effectToday: 'Applies from today. Past days keep their previous rules.',
     effectPlanned: (date: string) => `Planned change applies from ${date}.`,
@@ -865,7 +875,7 @@ export const en: Messages = {
     },
     allowNotifications: 'Allow notifications',
     reminderInfo: (n: number) =>
-      `${n} ${plural(n, 'habit', 'habits')} with a time. Important: Still doesn’t send push notifications. Reminders only appear while the app is open – closed or in the background, the browser can’t deliver them reliably. Without permission, the reminder appears inside the app.`,
+      `${n} ${plural(n, 'habit', 'habits')} with a time. Important: RYVO doesn’t send push notifications. Reminders only appear while the app is open – closed or in the background, the browser can’t deliver them reliably. Without permission, the reminder appears inside the app.`,
     appearance: 'Appearance',
     weekStart: 'Week starts on',
     monday: 'Monday',
@@ -883,8 +893,8 @@ export const en: Messages = {
     import: 'Import JSON…',
     clearAccount: 'Delete all account data…',
     clearLocal: 'Delete all data…',
-    footerAccount: 'Still · account · works offline too',
-    footerLocal: 'Still · saved locally · works offline',
+    footerAccount: 'RYVO · account · works offline too',
+    footerLocal: 'RYVO · saved locally · works offline',
     fileTooLarge: 'The file is too large.',
     notJson: 'The file is not valid JSON.',
     importTitle: 'Import replaces all data',
@@ -986,7 +996,7 @@ export const en: Messages = {
     learned: (s: string) => `Learned: ${s}`,
   },
   io: {
-    notStill: 'Not a Still export file.',
+    notStill: 'Not a RYVO export file.',
     version: (v: string) => `Unsupported version: ${v}.`,
     missingCore: 'Habits or entries are missing.',
     missingExtra: 'Analyses, journal or completions are missing.',
@@ -1043,6 +1053,16 @@ export const en: Messages = {
     dayLabel: (date: string, state: string) => `${date}: ${state}`,
     celebrate: { start: 'New streak started', continue: 'New day earned', recovery: 'The ice is broken – your streak continues' },
     dismissHint: 'Tap or press Escape to close.',
+    preview: {
+      title: 'Animation preview',
+      note: 'For viewing only: the preview saves nothing, changes no streak, uses no freeze and is never synced.',
+      lit: 'Active flame',
+      celebrate: 'New streak day (5 → 6)',
+      frozen: 'Frozen flame',
+      recover: 'Freeze recovery (5 → 6)',
+      badge: 'Preview',
+      tapToClose: 'Tap or press Escape to close the preview.',
+    },
   },
   reminder: { body: (name: string) => `Still open: ${name}` },
 };

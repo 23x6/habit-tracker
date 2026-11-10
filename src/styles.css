@@ -513,48 +513,81 @@ input[aria-invalid='true'] { border-color: var(--danger); }
 @media (max-width: 359px) { .sday { width: 26px; } .sday-icon { width: 22px; height: 22px; } .streak-strip { gap: 2px; } }
 
 .flame { display: block; overflow: visible; flex: none; }
-.fl-glow { opacity: 0.5; }
-.flame-frozen .fl-glow { opacity: 0.42; }
+.fl-glow { opacity: 0.36; }
+.flame-frozen .fl-glow { opacity: 0.4; }
 .fl-num { letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+/* Layers that move pivot on the flame's base, so the base stays anchored and the tip sways. */
+.fl-main, .fl-o, .fl-m, .fl-i, .fl-num text, .rv-shard, .fl-ember { transform-box: fill-box; transform-origin: 50% 100%; }
 
-/* One-shot motion. Fill mode `backwards`: once finished, the natural (sharp, unfiltered) styles apply again —
-   except where an element must stay hidden afterwards (`forwards`). Delays come from the component (--d). */
+/* Idle (lit dashboard flame): ~3 s seamless loop; the layers sway out of phase, the number never moves.
+   Paused while the page is hidden; off with reduced motion (the component renders `static`). */
+.anim-idle .fl-o { animation: fl-sway-o 3.2s ease-in-out infinite; }
+.anim-idle .fl-m { animation: fl-sway-m 3.2s ease-in-out -0.5s infinite; }
+.anim-idle .fl-i { animation: fl-breathe 3.2s ease-in-out -1s infinite; }
+.anim-idle .fl-glow { animation: fl-glow-idle 3.2s ease-in-out infinite; }
+.page-hidden .anim-idle * { animation-play-state: paused; }
+@keyframes fl-sway-o { 0%, 100% { transform: none; } 50% { transform: skewX(-2deg) scaleY(1.02); } }
+@keyframes fl-sway-m { 0%, 100% { transform: none; } 50% { transform: skewX(3deg) scaleY(1.035); } }
+@keyframes fl-breathe { 0%, 100% { transform: none; } 50% { transform: scale(1.03, 1.06); } }
+@keyframes fl-glow-idle { 0%, 100% { opacity: 0.32; } 50% { opacity: 0.44; } }
+
+/* One-shot motion. Fill mode `both`/`backwards`: before the delay the start frame shows, afterwards the natural
+   (sharp) styles apply again — except where an element must stay hidden (`forwards`). Delays: --d, pulse --p. */
 .fl-fade { animation: switch-fade 150ms linear backwards; }
-.fl-glowpulse { animation: fl-glowpulse 900ms ease-out var(--d) backwards; }
-.fl-ember { opacity: 0; transform-box: fill-box; transform-origin: center; animation: fl-ember 900ms ease-out var(--d) backwards; }
+.fl-glowpulse { animation: fl-glowpulse 820ms ease-out var(--p) backwards; }
+.fl-pulse { animation: fl-pulse 560ms cubic-bezier(0.3, 0.7, 0.3, 1) var(--p) backwards; }
+.fl-ember { opacity: 0; transform-origin: center; animation: fl-ember 900ms ease-out var(--d) backwards; }
 .fl-num-fade { animation: switch-fade 360ms ease-out 420ms backwards; }
-.fl-num-old { transform-box: fill-box; animation: fl-num-out 420ms cubic-bezier(0.3, 0.7, 0.2, 1) var(--d) forwards; }
-.fl-num-new { transform-box: fill-box; animation: fl-num-in 420ms cubic-bezier(0.3, 0.7, 0.2, 1) var(--d) backwards; }
-.rv-ice { animation: fl-hide 1ms linear var(--d) forwards; }
-.rv-cracks path { fill: none; stroke: #ffffff; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1;
-  animation: rv-crack 340ms ease-in var(--d) forwards, fl-hide 1ms linear var(--h) forwards; }
-.rv-shard { opacity: 0; transform-box: fill-box; transform-origin: center; animation: rv-shard 460ms cubic-bezier(0.2, 0.6, 0.3, 1) var(--d) backwards; }
-@keyframes fl-glowpulse { 0% { opacity: 0.5; } 35% { opacity: 0.95; } 100% { opacity: 0.5; } }
-@keyframes fl-ember { 0% { opacity: 0; transform: none; } 15% { opacity: 0.95; } 100% { opacity: 0; transform: translate(var(--dx), -34px) scale(0.6); } }
-@keyframes fl-num-out { 0% { transform: none; opacity: 1; filter: none; } 45% { filter: blur(1.4px); } 100% { transform: translateY(-24px); opacity: 0; filter: none; } }
-@keyframes fl-num-in { 0% { transform: translateY(24px); opacity: 0; filter: blur(1.4px); } 60% { filter: blur(0.6px); } 100% { transform: none; opacity: 1; filter: none; } }
+.fl-num-old { animation: fl-out-sharp 440ms cubic-bezier(0.3, 0.7, 0.2, 1) var(--d) both; }
+.fl-num-oldblur { animation: fl-out-blur 440ms cubic-bezier(0.3, 0.7, 0.2, 1) var(--d) both; }
+.fl-num-newblur { animation: fl-in-blur 440ms cubic-bezier(0.3, 0.7, 0.2, 1) var(--d) both; }
+.fl-num-new { animation: fl-in-sharp 440ms cubic-bezier(0.3, 0.7, 0.2, 1) var(--d) both; }
+@keyframes fl-glowpulse { 0% { opacity: 0.36; } 30% { opacity: 0.85; } 100% { opacity: 0.36; } }
+@keyframes fl-pulse { 0% { transform: none; } 35% { transform: scale(1.055); } 100% { transform: none; } }
+@keyframes fl-ember { 0% { opacity: 0; transform: none; } 15% { opacity: 0.9; } 100% { opacity: 0; transform: translate(var(--dx), -30px) scale(0.6); } }
+@keyframes fl-out-sharp { 0% { opacity: 1; transform: none; } 40% { opacity: 0; } 100% { opacity: 0; transform: translateY(-22px); } }
+@keyframes fl-out-blur { 0% { opacity: 0; transform: none; } 25% { opacity: 0.85; } 100% { opacity: 0; transform: translateY(-22px); } }
+@keyframes fl-in-blur { 0% { opacity: 0; transform: translateY(22px); } 25% { opacity: 0.85; } 75%, 100% { opacity: 0; transform: none; } }
+@keyframes fl-in-sharp { 0% { opacity: 0; transform: translateY(22px); } 30% { opacity: 0; } 100% { opacity: 1; transform: none; } }
+
+/* Recovery: frost brightens while cracks spread, then turns into shards; underneath, the inner layers of the lit
+   flame grow from the base as the counter rolls. */
+.anim-recover .fl-main .fl-m, .anim-recover .fl-main .fl-i { animation: fl-grow 520ms cubic-bezier(0.25, 0.8, 0.3, 1) var(--p) backwards; }
+.rv-ice { animation: rv-ice 760ms ease-in forwards; }
+.rv-badge { animation: rv-badge 560ms ease-in forwards; }
+.rv-cracks path { fill: none; stroke: #ffffff; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1;
+  animation: rv-crack 360ms cubic-bezier(0.4, 0, 0.6, 1) 200ms forwards, fl-hide 140ms linear 560ms forwards; }
+.rv-shard { opacity: 0; transform-origin: center; animation: rv-shard 520ms cubic-bezier(0.25, 0.6, 0.35, 1) 560ms backwards; }
+@keyframes fl-grow { 0% { transform: scale(0.6, 0.15); opacity: 0.4; } 100% { transform: none; opacity: 1; } }
+@keyframes rv-ice { 0%, 74% { opacity: 1; } 78%, 100% { opacity: 0; } }
+@keyframes rv-badge { 0%, 60% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translate(4px, -6px); } }
 @keyframes fl-hide { to { opacity: 0; } }
 @keyframes rv-crack { to { stroke-dashoffset: 0; } }
-@keyframes rv-shard { 0% { opacity: 0; transform: none; } 0.5% { opacity: 1; } 60% { opacity: 0.55; } 100% { opacity: 0; transform: translate(var(--sx), var(--sy)) rotate(var(--rot)) scale(0.6); } }
+@keyframes rv-shard { 0% { opacity: 0; transform: none; } 0.5% { opacity: 1; } 55% { opacity: 0.6; } 100% { opacity: 0; transform: translate(var(--sx), var(--sy)) rotate(var(--rot)) scale(0.82); } }
 .sday-in { animation: sday-in 260ms ease-out backwards; }
 .streak-rise { animation: sday-in 360ms ease-out 300ms backwards; }
-.sday-pop .sday-icon { animation: sday-pop 440ms cubic-bezier(0.2, 0.8, 0.2, 1) 700ms backwards; }
+.sday-pop .sday-icon { animation: sday-pop 440ms cubic-bezier(0.2, 0.8, 0.2, 1) 680ms backwards; }
 @keyframes sday-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-@keyframes sday-pop { 0% { transform: scale(0.4); opacity: 0.3; } 60% { transform: scale(1.18); opacity: 1; } 100% { transform: none; } }
+@keyframes sday-pop { 0% { transform: scale(0.5); opacity: 0.3; } 60% { transform: scale(1.12); opacity: 1; } 100% { transform: none; } }
 
-/* Celebration overlay: dims the app, never takes focus; a tap or Escape closes it. */
-.celebrate { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: var(--s4); background: rgba(16, 16, 16, 0.86); cursor: pointer; animation: switch-fade 180ms ease-out backwards; }
+/* Celebration overlay: restrained spring in, hold, fade and scale away. */
+.celebrate { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: var(--s4); background: rgba(12, 12, 12, 0.9); cursor: pointer; animation: switch-fade 220ms ease-out backwards; }
 .celebrate.passive { pointer-events: none; }
-.celebrate.leaving { animation: cel-out 260ms ease-in forwards; }
-.celebrate-card { display: flex; flex-direction: column; align-items: center; gap: var(--s2); text-align: center; animation: cel-card-in 380ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards; }
-.celebrate.leaving .celebrate-card { animation: cel-card-out 260ms ease-in forwards; }
-.celebrate.reduced, .celebrate.reduced .celebrate-card { animation-duration: 150ms; animation-name: switch-fade; }
+.celebrate.leaving { animation: cel-out 300ms ease-in forwards; }
+.celebrate-card { display: flex; flex-direction: column; align-items: center; gap: var(--s2); text-align: center; animation: cel-card-in 520ms cubic-bezier(0.22, 1.1, 0.36, 1) backwards; }
+.celebrate.leaving .celebrate-card { animation: cel-card-out 300ms cubic-bezier(0.4, 0, 0.7, 0.4) forwards; }
+.celebrate-text { animation: cel-text 320ms ease-out var(--d) backwards; }
+.celebrate.reduced, .celebrate.reduced .celebrate-card, .celebrate.reduced .celebrate-text { animation-duration: 150ms; animation-name: switch-fade; animation-delay: 0ms; }
 .celebrate.reduced.leaving, .celebrate.reduced.leaving .celebrate-card { animation-name: cel-out; }
-.celebrate-count { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; margin-top: var(--s2); }
+.celebrate-count { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; margin-top: var(--s1); font-variant-numeric: tabular-nums; }
 .celebrate-kind { color: var(--text-2); max-width: 320px; }
+.celebrate-preview { font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
 @keyframes cel-out { to { opacity: 0; } }
-@keyframes cel-card-in { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: none; } }
-@keyframes cel-card-out { to { opacity: 0; transform: scale(0.96) translateY(6px); } }
+@keyframes cel-card-in { from { opacity: 0; transform: translateY(10px) scale(0.88); } to { opacity: 1; transform: none; } }
+@keyframes cel-card-out { to { opacity: 0; transform: scale(0.92); } }
+@keyframes cel-text { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+.preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+.preview-grid .btn { justify-content: center; text-align: center; min-height: 48px; white-space: normal; }
 
 .streak-welcome { display: flex; flex-direction: column; align-items: center; gap: var(--s3); text-align: center; padding-top: var(--s2); }
 .streak-hero { display: flex; align-items: center; gap: var(--s4); }
