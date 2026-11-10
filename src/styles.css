@@ -351,14 +351,14 @@ em { font-style: normal; color: var(--text-2); font-weight: 400; }
 fieldset.field legend { margin-bottom: 8px; }
 .field-row { display: flex; gap: var(--s3); flex-wrap: wrap; }
 .field-row > .field { min-width: 140px; }
-input:not([type='checkbox']), textarea {
+input:not([type='checkbox']), textarea, select {
   width: 100%; min-height: 44px; padding: 10px 12px; border-radius: var(--r-sm);
   background: var(--input); border: 1px solid var(--border);
   font-size: 16px; /* prevents iOS zoom on focus */
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 textarea { resize: vertical; line-height: 1.4; }
-input:focus-visible, textarea:focus-visible { outline: none; border-color: rgba(238, 238, 236, 0.55); box-shadow: 0 0 0 3px rgba(238, 238, 236, 0.1); border-radius: var(--r-sm); }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; border-color: rgba(238, 238, 236, 0.55); box-shadow: 0 0 0 3px rgba(238, 238, 236, 0.1); border-radius: var(--r-sm); }
 input[aria-invalid='true'] { border-color: var(--danger); }
 .field-error { color: var(--danger); font-size: var(--fs-sm); }
 .inline { display: flex; align-items: center; gap: var(--s2); }
@@ -626,3 +626,4 @@ input[aria-invalid='true'] { border-color: var(--danger); }
 .dash-review { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; min-height: 44px; padding: var(--s2) var(--s3); border-top: 1px solid var(--border); text-align: left; }
 .dash-review:hover { background: var(--fill-soft); }
 .dash-review-link { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; font-size: var(--fs-sm); }
+.push-status { font-weight: 600; }

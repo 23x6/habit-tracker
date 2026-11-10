@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../auth';
 import { useI18n, useT, type Lang } from '../i18n';
 import { planImport, type ImportPlan } from '../lib/accountImport';
+import { disablePush } from '../lib/push';
+import { supabase } from '../lib/remote';
 import { credentialErrors, MIN_PASSWORD } from '../lib/auth';
 import { accountDbName, LOCAL_DB, StillDb, type Conflict } from '../lib/db';
 import { formatRange } from '../lib/date';
@@ -314,6 +316,7 @@ export function LogoutSheet({ open, onClose, userId, pending }: { open: boolean;
   }, [open, pending]);
   const go = async () => {
     setBusy(true);
+    await disablePush(supabase); // shared device: no reminders for this account here after signing out
     const r = await auth.signOut();
     setBusy(false);
     if (!r.ok) return setError(r.error);

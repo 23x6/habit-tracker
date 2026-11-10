@@ -1,6 +1,6 @@
-import { addDays, isValidKey, startOfWeek, type DateKey } from './date';
-import { de, type Messages } from '../i18n/messages';
-import { completionId, isActiveOn, isArchived, isFrequencyAt, isWeeklyGoalAt, ruleAt, uid, type Analysis, type Completion, type Habit, type JournalEntry } from './model';
+import { addDays, isValidKey, startOfWeek, type DateKey } from './date.js';
+import { de, type Messages } from '../i18n/messages.js';
+import { completionId, isActiveOn, isArchived, isFrequencyAt, isWeeklyGoalAt, ruleAt, uid, type Analysis, type Completion, type Habit, type JournalEntry } from './model.js';
 
 // Weekly count goals. Two sources count toward a week:
 //   • kind 'weekly'  → saved analyses (title + learnings), "2 Analysen pro Woche";

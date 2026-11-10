@@ -1,9 +1,9 @@
-import { diffDays, isValidKey } from './date';
-import { completionId, defaultSettings, entryId, SCHEMA_VERSION, type Analysis, type Completion, type Entry, type Habit, type JournalEntry, type Review, type Settings } from './model';
-import type { Kind, Snapshot } from './db';
-import { ICON_NAMES } from './icons';
-import { isHttpUrl } from './weekly';
-import { de, type Messages } from '../i18n/messages';
+import { diffDays, isValidKey } from './date.js';
+import { completionId, defaultSettings, entryId, SCHEMA_VERSION, type Analysis, type Completion, type Entry, type Habit, type JournalEntry, type Review, type Settings } from './model.js';
+import type { Kind, Snapshot } from './db.js';
+import { ICON_NAMES } from './icons.js';
+import { isHttpUrl } from './weekly.js';
+import { de, type Messages } from '../i18n/messages.js';
 
 // Validators return fault keys; validateImport turns them into localized messages.
 type IoFault = keyof Messages['io']['f'];
@@ -40,6 +40,8 @@ export function habitErrors(h: unknown, version = SCHEMA_VERSION): string[] {
   if (!isStr(h.unit, 30)) e.push('unitInvalid');
   if (!isValidKey(h.startDate)) e.push('startInvalid');
   if (!(h.reminder === null || (isStr(h.reminder) && /^([01]\d|2[0-3]):[0-5]\d$/.test(h.reminder)))) e.push('reminderInvalid');
+  const wr = h.weeklyReminder;
+  if (!(wr === undefined || wr === null || (isObj(wr) && Number.isInteger(wr.day) && (wr.day as number) >= 0 && (wr.day as number) <= 6 && isStr(wr.time) && /^([01]\d|2[0-3]):[0-5]\d$/.test(wr.time)))) e.push('reminderInvalid');
   if (!isNum(h.order) || !isNum(h.createdAt)) e.push('metaInvalid');
   if (!Array.isArray(h.rules) || !h.rules.length) e.push('scheduleMissing');
   else
@@ -127,6 +129,7 @@ export const cleanHabit = (h: Habit): Habit => ({
     ...(r.perWeek !== undefined ? { perWeek: r.perWeek } : {}), ...(r.multi ? { multi: true } : {}),
   })),
   pauses: h.pauses.map((x) => ({ from: x.from, to: x.to })), reminder: h.reminder, order: h.order, createdAt: h.createdAt,
+  ...(h.weeklyReminder ? { weeklyReminder: { day: h.weeklyReminder.day, time: h.weeklyReminder.time } } : {}),
 });
 const cleanEntry = (e: Entry): Entry => ({ id: e.id, habitId: e.habitId, date: e.date, value: e.value, note: e.note, updatedAt: e.updatedAt });
 const cleanCompletion = (c: Completion): Completion => ({ id: c.id, habitId: c.habitId, date: c.date, createdAt: c.createdAt, updatedAt: c.updatedAt });

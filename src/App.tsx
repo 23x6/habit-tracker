@@ -1,13 +1,15 @@
 import { AnimatePresence, motion, MotionConfig } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { HeaderAccountButton, LangSwitch, RecoverySheet, SaveStatus } from './components/Account';
-import { useT } from './i18n';
+import { useI18n } from './i18n';
 import { DB_BLOCKED } from './lib/db';
 import { HabitSheet } from './components/HabitSheet';
 import { StreakCelebration, StreakWelcome } from './components/Streak';
 import { Icon, springs, ToastHost, useReduce } from './components/ui';
 import type { UIIcon } from './lib/icons';
 import { dueReminders, notify } from './lib/reminders';
+import { pushActiveFor, pushSupport, refreshPush } from './lib/push';
+import { supabase } from './lib/remote';
 import type { Habit } from './lib/model';
 import { Detail } from './screens/Detail';
 import { Journal } from './screens/Journal';
@@ -27,7 +29,7 @@ const TABS: { id: Tab; icon: UIIcon }[] = [
 ];
 
 export function App() {
-  const t = useT();
+  const { t, lang } = useI18n();
   const store = useStore();
   const { status, error, habits, settings, today, getEntry, showToast } = store;
   const reduce = useReduce();
@@ -56,14 +58,40 @@ export function App() {
     return () => (window.removeEventListener('online', on), window.removeEventListener('offline', on));
   }, []);
 
-  // In-app reminders (only while open — see lib/reminders.ts).
+  // Push (opt-in per device): keep this device's registration current, or turn it off if it belongs to another user.
+  const userId = store.partition.sync ? store.partition.userId : null;
   useEffect(() => {
-    if (!settings.remindersEnabled || status !== 'ready') return;
+    if (!userId || !supabase || pushSupport() !== 'ok' || !('Notification' in window) || Notification.permission !== 'granted') return;
+    void refreshPush(supabase, userId, lang).catch(() => {}); // offline: next start
+  }, [userId, lang]);
+
+  // A tapped notification opens its habit: `?habit=<id>` on a fresh start, or a message from the service worker.
+  useEffect(() => {
+    const open = (url: string) => {
+      const id = new URL(url, location.href).searchParams.get('habit');
+      if (!id) return;
+      setTab('today');
+      setReview(null);
+      setDetailId(id);
+    };
+    if (new URLSearchParams(location.search).has('habit')) {
+      open(location.href);
+      history.replaceState(null, '', location.pathname);
+    }
+    const onMsg = (e: MessageEvent) => e.data?.type === 'open' && typeof e.data.url === 'string' && open(e.data.url);
+    navigator.serviceWorker?.addEventListener('message', onMsg);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMsg);
+  }, []);
+
+  // In-app reminders (only while open — see lib/reminders.ts). Skipped while push is on for this device, so the
+  // same reminder never alerts twice.
+  useEffect(() => {
+    if (!settings.remindersEnabled || status !== 'ready' || pushActiveFor(userId)) return;
     const check = () => notify(dueReminders(habits, getEntry), (m) => showToast(m), t.reminder.body);
     check();
     const iv = setInterval(check, 30_000);
     return () => clearInterval(iv);
-  }, [settings.remindersEnabled, habits, getEntry, status, showToast, t]);
+  }, [settings.remindersEnabled, habits, getEntry, status, showToast, t, userId]);
 
   const detail = habits.find((h) => h.id === detailId) ?? null;
 

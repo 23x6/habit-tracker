@@ -35,9 +35,16 @@ Live: https://still-ashy-seven.vercel.app/ (Vercel project `still`, deployed fro
    - Supabase migration `20261111000000_reviews.sql`.
 
    Details: HANDOFF.md, "Iteration 9".
+   - **Awaiting manual confirmation:** live sync of a weekly review between two signed-in devices.
+10. **Push reminders while the app is closed (this iteration):**
+   - opt-in per device, with a test notification;
+   - daily reminders only while open, weekly goals with a reminder day;
+   - Supabase pg_cron → Vercel function every 5 minutes;
+   - migration `20261112000000_push.sql` and `supabase/setup/reminders-cron.sql`.
+
+   Details: HANDOFF.md, "Iteration 10".
 
 ## Next (named by the user, not started)
-- Reminders beyond the open app.
 - Pauses (planned breaks as a feature, beyond archiving).
 - Journal search.
 
@@ -47,4 +54,5 @@ Live: https://still-ashy-seven.vercel.app/ (Vercel project `still`, deployed fro
 - **Name.** Done for everything visible (iteration 8). Stored-data identifiers, the export format id and the Vercel URL intentionally still say "still".
 - **Review prompts.** Saving is explicit ("Sichern"), with a local draft while typing, like journal entries. Saving on every pause would create many synced versions and more conflicts. Can be revisited.
 - **Dashboard review link.** Shown on the last two days of the week only. It doesn't nag after the week has ended; the review stays reachable from Statistics.
+- **Reminder timing.** The 5-minute interval is a choice within the free plans. Every minute is possible with the same setup (about 43,000 calls a month); every 5 minutes leaves headroom.
 - **"Skip the animation" setting.** It is stored per device (`localStorage`), not per account.

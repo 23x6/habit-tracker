@@ -28,6 +28,8 @@ export interface Draft {
   multi: boolean;
   startDate: DateKey;
   reminder: string | null;
+  /** Weekly goals: optional notification day (0 = Sunday) and time. */
+  weeklyReminder: { day: number; time: string } | null;
 }
 
 export interface Toast {
@@ -121,6 +123,9 @@ export const useStore = () => {
   if (!s) throw new Error('StoreProvider missing');
   return s;
 };
+
+/** The draft describes a weekly goal (analyses or "X-mal pro Woche"), which uses a weekly reminder day. */
+const weeklyGoalDraft = (d: Draft) => d.kind === 'weekly' || (d.kind === 'binary' && d.schedule === 'weekly');
 
 const LIST: Record<Exclude<Kind, 'settings'>, keyof Snapshot> = { habit: 'habits', entry: 'entries', completion: 'completions', analysis: 'analyses', journal: 'journal', review: 'reviews' };
 
@@ -339,6 +344,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
         unit: d.kind === 'numeric' ? d.unit.trim() : d.kind === 'weekly' ? 'Analysen' : '', startDate: d.startDate,
         rules: [makeRule(d.startDate, days, target, freq)],
         pauses: [], reminder: d.kind === 'weekly' ? null : d.reminder,
+        weeklyReminder: weeklyGoalDraft(d) ? d.weeklyReminder : null,
         order: habits.length ? Math.max(...habits.map((x) => x.order)) + 1 : 0, createdAt: Date.now(),
       };
       await commit([{ kind: 'habit', id: h.id, rec: h }]);
@@ -367,6 +373,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
       const rec: Habit = {
         ...h, name: d.name.trim(), description: d.description.trim(), icon: d.icon, unit: h.kind === 'numeric' ? d.unit.trim() : h.unit,
         startDate: d.startDate, reminder: h.kind === 'weekly' ? null : d.reminder, rules,
+        weeklyReminder: weeklyGoalDraft({ ...d, kind: h.kind }) ? d.weeklyReminder : null,
       };
       await commit([{ kind: 'habit', id, rec }]);
       showToast(tRef.current.toast.changesSaved);

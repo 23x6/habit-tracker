@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { AccountSection, LangSwitch } from '../components/Account';
+import { PushSettings } from '../components/PushSettings';
 import { FlamePreviewOverlay, readSkipWelcome, writeSkipWelcome, type FlamePreview } from '../components/Streak';
 import { useT } from '../i18n';
 import { Confirm, Segmented, Sheet } from '../components/ui';
@@ -77,6 +78,8 @@ export function Settings() {
         )}
         <p className="muted small">{t.settings.reminderInfo(withReminder)}</p>
       </section>
+
+      <PushSettings />
 
       <section className="card">
         <h2>{t.settings.appearance}</h2>

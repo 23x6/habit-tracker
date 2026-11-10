@@ -65,6 +65,98 @@ Email delivery:
 - Supabase's built-in email service only sends to addresses of the project's organization members and is heavily rate-limited.
 - For other people to register, configure custom SMTP (Authentication → Emails → SMTP Settings) with a provider of your choice. Not done; it needs the user's decision and possibly a paid plan.
 
+## Iteration 10 (2026-11-11): push reminders while the app is closed
+### Delivery path (checked against official docs on 2026-11-11)
+- **iPhone/iPad:** Web Push works only for Home Screen web apps from iOS/iPadOS 16.4, in standalone display mode, and the permission must be requested from a user action (WebKit, "Web Push for Web Apps on iOS and iPadOS"). Safari tabs on iOS get no push. Desktop Chrome, Edge, Firefox and Safari support standard Web Push with VAPID.
+- **Hosting limits:**
+  - Vercel is on the **Hobby** plan (`vercel teams ls`). Vercel Cron Jobs run at most once a day there (with up to an hour of jitter), and the newer Vercel Schedules at most every 15 minutes with 15 minutes of jitter. Neither is usable for reminders.
+  - Supabase's platform supports pg_cron with pg_net to call HTTP endpoints on a schedule (Supabase docs "Scheduling Edge Functions", "Cron").
+- **Chosen setup (no paid service):** Supabase pg_cron calls `POST /api/reminders` on Vercel **every 5 minutes** through pg_net.
+  - That is about 8,640 function calls a month, well inside Hobby's included invocations.
+  - The function computes what is due and sends Web Push with the `web-push` library (VAPID).
+  - The UI says reminders arrive up to about 5 minutes after their time.
+
+### What is sent (`src/lib/pushPlan.ts`, pure and shared with the app's model)
+- **Daily / weekday habits with a reminder time:** sent when the habit is scheduled on that **local** date (device time zone, IANA) and its target is still open in the synced records. Example: 3/10 pages → "Noch offen: 3/10 Seiten"; 10/10 → nothing. Archived, unscheduled and completed habits are skipped, and deleted records (tombstones) are ignored.
+- **Weekly goals** (analyses or "X-mal pro Woche"): an optional reminder day and time (`Habit.weeklyReminder`, set in the habit form). It is sent on that weekday while the week's count is below the target, e.g. "Noch 1 Analyse diese Woche" / "Noch 2× diese Woche". The week follows the configured week start. The reminder day is only a notification preference.
+- **Window:** a reminder is due from its time for 60 minutes. A late or skipped run still sends it; much later runs don't send stale reminders.
+- **Daylight saving:** local time is read per run. A time skipped in spring (02:30) is sent at the first run after the jump; the repeated hour in autumn can't send twice (same key).
+- **Tapping a notification** opens RYVO on that habit (`./?habit=<id>`): an open window is focused and told which habit to open; otherwise a new window opens with the URL. The app removes the parameter afterwards.
+
+### Server (`api/reminders.ts`, `api/push-test.ts`, `src/server/*`)
+- `POST /api/reminders`:
+  - requires `Authorization: Bearer <CRON_SECRET>`, compared in constant time;
+  - reads data only through the `push_*` SQL functions, which check the same secret (hash in `private.push_config`);
+  - **Vercel holds no Supabase service-role key**; it uses the public anon key plus the secret.
+- **Each reminder is claimed** once per device and key (`push_deliveries`, primary key), before sending, so overlapping or duplicate runs never alert twice.
+- **Send results:** 404/410 removes the device (expired subscription); other failures release the claim, so a later run within the window retries. TTL is 1 hour.
+- `POST /api/push-test`: sends a test notification to the caller's own device. It authenticates with the user's access token, and RLS proves ownership.
+- **Packaging:** Vercel compiles `api/*.ts` as ES modules without bundling. The functions' import graph therefore uses explicit `.js` specifiers (`src/lib/{date,model,weekly,io,icons,pushPlan}.ts`, `src/i18n/messages.ts`, `src/server/*`); TypeScript and Vite resolve them to the `.ts` files. A preview deployment showed that extensionless imports fail there (`ERR_MODULE_NOT_FOUND`).
+- `tsconfig.server.json` type-checks `api/` and `src/server/` with Node types. `npm run typecheck` and `build` run both configs.
+
+### Database (`supabase/migrations/20261112000000_push.sql`)
+- **Tables:**
+  - `push_subscriptions` (one row per device: endpoint, keys, time zone, language; unique endpoint);
+  - `push_deliveries` (sent keys; cleaned after 40 days);
+  - `private.push_config` (SHA-256 of the scheduler secret).
+- **RLS:** users can select and delete only their own subscriptions. Nobody else can see deliveries or the config.
+- **Functions:**
+  - `push_register` (authenticated): an endpoint registered by another user moves to the caller; at most 20 devices per user;
+  - `push_unregister(endpoint)` (anon/authenticated): an unguessable endpoint is the device's capability; used on logout;
+  - scheduler functions `push_due_data`, `push_claim`, `push_result` (anon + secret).
+- `grant usage on schema public to anon` (needed to call the functions). anon still has no table privileges.
+- **Scheduler setup** is separate (pg_cron/pg_net aren't in PGlite): `supabase/setup/reminders-cron.sql` with a `<CRON_SECRET>` placeholder; the secret goes into Vault. A filled copy with the real secret was generated locally only (`supabase/.temp/`, git-ignored).
+
+### Device (`src/lib/push.ts`, Settings → „Erinnerungen bei geschlossener App“)
+- **Buttons:** turn on (permission is requested only after the tap, as the first step), send a test notification, turn off.
+- **Guidance (DE/EN):**
+  - an account is required (the server must know the entries);
+  - iPhone not installed: add to the Home Screen;
+  - permission denied: where to allow it;
+  - unsupported browser;
+  - not configured;
+  - offline.
+- **Shown always:** timing (every 5 minutes) and the offline edge case. The server can only suppress a reminder after it receives the completion, so something checked off offline can still be reminded until it syncs.
+- **Shared devices:** `still-push-owner` remembers who turned push on in this browser. Signing out turns push off (server row removed, browser subscription removed). When another user signs in, the previous user's subscription is removed, not taken over. Offline, the push service reports the dead endpoint (410) at the next send.
+- **No double alerts:** while push is on for the signed-in user on this device, the in-app reminder loop doesn't run.
+- On every start the registration is refreshed (time zone, language, rotated keys).
+
+### Configuration
+- **Vercel (production):**
+  - `VITE_VAPID_PUBLIC_KEY` (public);
+  - `VAPID_PRIVATE_KEY` (sensitive);
+  - `VAPID_SUBJECT` = `https://still-ashy-seven.vercel.app/`;
+  - `CRON_SECRET` (sensitive).
+- **Not done by Claude:** adding these was blocked by the session's permission rules (secret-store write). The user adds them (README "Push reminders").
+
+### Verification
+- `npm run typecheck` (app + server) clean, `npm test` **169/169** (28 new), `npm run build` OK.
+- **`lib/pushPlan.test.ts`:** open vs. completed (3/10 vs. 10/10), weekday not scheduled, archived, no time, the 60-minute window, weekly goals (remaining count, target reached, other weekday, Sunday week start), time zones (New York, Tokyo, unknown zone), DST spring and autumn in Berlin, a target change in force on the local date.
+- **`server/reminders.test.ts`** (real migrations in PGlite, RLS active, scheduler as `anon` + secret):
+  - only open reminders, from synced records, and tombstones ignored;
+  - a synced completion suppresses the next reminder;
+  - three overlapping runs send once per device; two devices each get one;
+  - retries within the window, none after it; expired devices removed;
+  - accounts isolated (each device gets only its owner's reminders);
+  - users can't read others' devices, deliveries, config or scheduler data; wrong secret → forbidden;
+  - logout (`push_unregister`) stops delivery; the shared device moves to the next user.
+- **Encrypted message:** a real `web-push` request is decrypted with the device keys (aes128gcm, VAPID header, TTL).
+- **`lib/push.test.ts`** (jsdom, fake push APIs): permission first, then subscribe and register; denied; another user on the same browser removes the subscription; owner refresh; sign-out; iPhone-in-Safari → install guidance; `weeklyReminder` validation and sanitizing.
+- **Browser (Chromium via Playwright, production build via `vite preview`):**
+  - a push delivered to the real service worker via the DevTools protocol (`ServiceWorker.deliverPushMessage`) produced `showNotification("10 Seiten lesen", body "Heute noch offen", tag, data.url "./?habit=example-reading")`;
+  - the click handler with that notification opened the habit in the open window;
+  - a cold start with `?habit=` opened it and cleaned the URL;
+  - Settings without an account shows the account requirement;
+  - the weekly reminder field saves `{ day: 3, time: "19:30" }`.
+  - Headless Chromium shows no system notifications and has no push service, so a real browser subscription and visible notification weren't possible there.
+- **Preview deployment:** both functions load on Vercel and answer 503 "not configured" (preview has no secrets).
+- **Not verified yet:**
+  - scheduled delivery with the app closed on a real device (needs the configuration above and a real iPhone);
+  - the live pg_cron run;
+  - VoiceOver.
+
+  A test notification only proves that the device receives push, not that the schedule works.
+
 ## Iteration 9 (2026-11-11): progress overview (7 / 30 days) and weekly review
 ### Statistics (`screens/Stats.tsx`, logic in `lib/review.ts`)
 - **Period switch** "7 Tage / 30 Tage": the last 7 or 30 local calendar days including today, with the exact range ("8.–14. Nov. 2026", via `formatRange`). The choice is remembered per device (`still-stats-span`).

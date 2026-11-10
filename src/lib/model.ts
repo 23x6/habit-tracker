@@ -1,4 +1,4 @@
-import { addDays, range, weekday, type DateKey } from './date';
+import { addDays, range, weekday, type DateKey } from './date.js';
 
 export const SCHEMA_VERSION = 4;
 
@@ -36,7 +36,12 @@ export interface Habit {
   rules: Rule[];
   /** Archive periods; days inside are not scheduled, so they never count against streaks or rates. */
   pauses: Pause[];
-  reminder: string | null; // 'HH:MM'
+  reminder: string | null; // 'HH:MM' — daily / weekday habits
+  /**
+   * Weekly goals (analyses or "X-mal pro Woche"): optional notification day (0 = Sunday) and time. Only a
+   * notification preference: completions still count on any eligible day of the week.
+   */
+  weeklyReminder?: { day: number; time: string } | null;
   order: number;
   createdAt: number;
 }

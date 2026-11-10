@@ -123,6 +123,24 @@ To test without the cloud, `npx supabase start` runs a complete local stack, inc
   - Changes that haven't synced yet exist only in this browser's storage on this device.
   - Nothing relies on `beforeunload` or a last-second network request.
 
+## Push reminders (optional)
+Reminders can reach a device while RYVO is closed:
+- **iPhone/iPad:** installed Home Screen app on iOS 16.4+.
+- **Desktop:** Chrome, Edge, Firefox and Safari.
+- **Requires:** an account, because the server checks the synced entries.
+- **How:** Supabase pg_cron calls `POST /api/reminders` (a Vercel Function) every 5 minutes. That function sends Web Push (VAPID).
+
+Setup:
+1. Run `supabase/migrations/20261112000000_push.sql` in the Supabase SQL Editor.
+2. Generate keys: `npx web-push generate-vapid-keys`, and a random secret, e.g. `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
+3. In Vercel → Settings → Environment Variables (Production), add:
+   - `VITE_VAPID_PUBLIC_KEY`;
+   - `VAPID_PRIVATE_KEY` (sensitive);
+   - `VAPID_SUBJECT` (your site URL or a `mailto:`);
+   - `CRON_SECRET` (sensitive).
+4. Run `supabase/setup/reminders-cron.sql` in the SQL Editor, with `<CRON_SECRET>` replaced by the same secret.
+5. Deploy. In the app: Settings → „Erinnerungen bei geschlossener App“ → turn on → send a test notification.
+
 ## Progress overview and weekly review
 - **Statistics:**
   - a 7-day / 30-day switch with the exact local date range;
@@ -177,6 +195,6 @@ Android Chrome: menu → *App installieren*. Desktop Chrome/Edge: the install ic
 - **Only partly verified against a real Supabase project.** Sign-in and sync of a habit and its completion between two browser sessions of the same account were tested manually on desktop. Not yet tested against the real project: password reset, offline reconnect, conflict resolution, cross-user isolation (covered by automated RLS tests against the migration in PGlite) and real mobile devices.
 - **Sync isn't real-time:** it polls (on start, after edits, on focus, every 30 s).
 - **Structured conflicts:** for non-text records (e.g. a habit renamed differently on two devices), the server version wins.
-- **Reminders only fire while RYVO is open** (no push). Weekly goals have no reminders.
+- **Reminders:** without push they only fire while RYVO is open. With push (see above) they arrive up to about 5 minutes late, and a habit checked off offline can still be reminded until it syncs.
 - **Local mode** keeps data only in this browser; Safari may evict website data after long inactivity. Export regularly or use an account.
 - **Week start:** changing it regroups past weeks; weekly targets stay stable.

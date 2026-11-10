@@ -21,7 +21,38 @@ self.addEventListener('fetch', (e) => {
   }
   e.respondWith(caches.match(req, { ignoreSearch: true, ignoreVary: true }).then((r) => r || fetch(req)));
 });
+// Push reminders from the server (api/reminders.ts): { kind, title, body, url, tag }. Every push shows a
+// notification (required by browsers; Safari revokes subscriptions that receive silent pushes).
+self.addEventListener('push', (e) => {
+  let d = {};
+  try {
+    d = e.data ? e.data.json() : {};
+  } catch (_) {
+    d = { body: e.data ? e.data.text() : '' };
+  }
+  e.waitUntil(
+    self.registration.showNotification(d.title || 'RYVO', {
+      body: d.body || '',
+      tag: d.tag || undefined,
+      icon: './icon-192.png',
+      data: { url: d.url || './' },
+    }),
+  );
+});
+
+// Tapping a notification opens RYVO on the habit it is about (`?habit=<id>`): an open window is focused and
+// told which habit to show; otherwise a new window starts with the URL.
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
-  e.waitUntil(self.clients.matchAll({ type: 'window' }).then((cs) => (cs[0] ? cs[0].focus() : self.clients.openWindow('./'))));
+  const url = new URL((e.notification.data && e.notification.data.url) || './', self.registration.scope).href;
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
+      const c = cs.find((x) => x.url.startsWith(self.registration.scope));
+      if (c) {
+        c.postMessage({ type: 'open', url });
+        return c.focus();
+      }
+      return self.clients.openWindow(url);
+    }),
+  );
 });

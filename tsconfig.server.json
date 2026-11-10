@@ -1,0 +1,10 @@
+{
+  // Server functions (api/, deployed as Vercel Functions) and the code they share with the app.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"]
+  },
+  "include": ["api", "src/server"],
+  "exclude": []
+}

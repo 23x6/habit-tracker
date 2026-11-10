@@ -7,7 +7,7 @@ import { useStore, type Draft, type ScheduleType } from '../store';
 import { Icon, Segmented, Sheet, SwitchContent } from './ui';
 
 const blank = (today: string): Draft => ({
-  name: '', description: '', icon: 'circle', kind: 'binary', unit: '', schedule: 'daily', days: ALL_DAYS, target: 1, perWeek: 3, multi: false, startDate: today, reminder: null,
+  name: '', description: '', icon: 'circle', kind: 'binary', unit: '', schedule: 'daily', days: ALL_DAYS, target: 1, perWeek: 3, multi: false, startDate: today, reminder: null, weeklyReminder: null,
 });
 
 function fromHabit(h: Habit): Draft {
@@ -16,6 +16,7 @@ function fromHabit(h: Habit): Draft {
   return {
     name: h.name, description: h.description, icon: h.icon, kind: h.kind, unit: h.unit, schedule, days: r.days,
     target: r.target, perWeek: r.perWeek ?? 3, multi: !!r.multi, startDate: h.startDate, reminder: h.reminder,
+    weeklyReminder: h.weeklyReminder ?? null,
   };
 }
 
@@ -46,6 +47,7 @@ export function HabitSheet({ open, habit, onClose }: { open: boolean; habit: Hab
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => ({ ...x, [k]: v }));
   const analyses = d.kind === 'weekly';
+  const weeklyGoal = analyses || (d.kind === 'binary' && d.schedule === 'weekly');
   const frequency = d.kind === 'binary' && d.schedule === 'weekly';
   // A numeric habit can't be "X times per week": show its schedule as daily without losing the stored choice.
   const schedule: ScheduleType = d.kind !== 'binary' && d.schedule === 'weekly' ? 'daily' : d.schedule;
@@ -231,7 +233,7 @@ export function HabitSheet({ open, habit, onClose }: { open: boolean; habit: Hab
             <input type="date" value={d.startDate} onChange={(e) => set('startDate', e.target.value)} aria-invalid={touched && !!errors.startDate} />
             {err('startDate')}
           </label>
-          {!analyses && (
+          {!weeklyGoal && (
             <label className="field">
               <span>{t.sheet.reminder} <em>{t.common.optional}</em></span>
               <div className="inline">
@@ -241,7 +243,27 @@ export function HabitSheet({ open, habit, onClose }: { open: boolean; habit: Hab
             </label>
           )}
         </div>
-        {d.reminder && !analyses && <p className="muted small">{t.sheet.reminderNote}</p>}
+        {d.reminder && !weeklyGoal && <p className="muted small">{t.sheet.reminderNote}</p>}
+        {weeklyGoal && (
+          <>
+            <div className="field-row">
+              <label className="field">
+                <span>{t.push.weeklyLabel} <em>{t.common.optional}</em></span>
+                <select value={d.weeklyReminder?.day ?? ''} onChange={(e) => set('weeklyReminder', e.target.value === '' ? null : { day: Number(e.target.value), time: d.weeklyReminder?.time ?? '18:00' })}>
+                  <option value="">{t.push.noDay}</option>
+                  {weekdayOrder(settings.weekStart).map((wd) => <option key={wd} value={wd}>{weekdayLong(wd)}</option>)}
+                </select>
+              </label>
+              {d.weeklyReminder && (
+                <label className="field">
+                  <span>{t.push.time}</span>
+                  <input type="time" required value={d.weeklyReminder.time} onChange={(e) => e.target.value && set('weeklyReminder', { day: d.weeklyReminder!.day, time: e.target.value })} />
+                </label>
+              )}
+            </div>
+            {d.weeklyReminder && <p className="muted small">{t.push.weeklyNote}</p>}
+          </>
+        )}
         <button type="submit" hidden />
       </form>
     </Sheet>
