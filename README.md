@@ -47,8 +47,17 @@ To test without the cloud, `npx supabase start` runs a complete local stack, inc
 - **Heute (Today):**
   - The date header and swipeable week strip.
   - A **dashboard ring** with a "Heute / Woche" switch (see below).
-  - All habits due on the selected day, plus the weekly goals.
-  - One tap completes a habit; undo is available.
+  - **What remains first:** the habits for the selected day are sorted into three groups:
+    - open daily habits;
+    - weekly goals that aren't reached yet, with what is left ("Sport · noch 2× diese Woche" / "2 more this week");
+    - a collapsible **Erledigt · n** / **Done · n** section, remembered per device.
+    Manual order is kept within each group. Unscheduled, archived or not-yet-started habits aren't listed. A row you are tapping or typing in stays where it is and moves about 1.2 s after you stop.
+  - **Quick actions,** separate from opening details:
+    - done/not-done habits: one tap, with undo;
+    - numeric habits: − and + (step 1 below a target of 100, otherwise a tenth of the target's order of magnitude, e.g. 100 for 2000), plus a field for direct entry (Enter saves, Escape cancels). Undo after reaching the target takes back only that step;
+    - "X-mal pro Woche": one tap adds a completion for the selected day, within the one-per-day limit unless several per day are allowed;
+    - analysis goals: only "Analyse hinzufügen", never a completion shortcut.
+  - Rapid taps are written one after another, each from the latest stored value, so none is lost or duplicated.
 - **Habit types and schedules:**
   - Done/not done or a numeric value (target and unit).
   - Daily or on selected weekdays.

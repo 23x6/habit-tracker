@@ -65,6 +65,10 @@ interface Store {
   deleteHabit: (id: string) => Promise<void>;
   reorder: (ids: string[]) => Promise<void>;
   setEntry: (habit: Habit, date: DateKey, value: number, note?: string, message?: string) => Promise<void>;
+  /** Binary quick action: flips the stored state at the time of writing (not of the tap), with undo. */
+  toggleEntry: (habit: Habit, date: DateKey) => Promise<void>;
+  /** Numeric quick action: adds `delta` to the stored value at the time of writing, so rapid taps all count. */
+  stepEntry: (habit: Habit, date: DateKey, delta: number) => Promise<void>;
   setSettings: (s: Partial<Settings>) => Promise<void>;
   saveAnalysis: (id: string, habitId: string, d: AnalysisDraft) => Promise<void>;
   deleteAnalysis: (id: string) => Promise<void>;
@@ -119,6 +123,17 @@ export function applyOps(s: Snapshot, ops: Op[]): Snapshot {
     (next as Record<string, unknown>)[k] = list;
   }
   return next;
+}
+
+/** Entry write for `habit` on `date`: `next` maps the stored value to the new one; the note is kept. */
+function entryOp(s: Snapshot, habit: Habit, date: DateKey, next: (current: number) => number, note?: string): Op {
+  const id = entryId(habit.id, date);
+  const prev = s.entries.find((e) => e.id === id);
+  const raw = next(prev?.value ?? 0);
+  const v = Math.max(0, habit.kind === 'binary' ? Math.min(1, raw) : Math.round(raw * 100) / 100);
+  const n = note ?? prev?.note ?? '';
+  const rec: Entry | undefined = v === 0 && !n ? undefined : { id, habitId: habit.id, date, value: v, note: n, updatedAt: Date.now() };
+  return { kind: 'entry', id, rec };
 }
 
 /** Ops that restore the records touched by `ops` to their state in `s` (undo). */
@@ -202,32 +217,42 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
 
   const showToast = useCallback((message: string, undo?: () => void) => setToast({ id: ++toastSeq.current, message, undo }), []);
 
+  // Writes run one after another. Ops given as a function are built from the state left by all earlier writes,
+  // so rapid taps never compute from a stale value (no lost updates, no accidental duplicates).
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+
   /** Persist first, then update memory, so the UI never shows data that isn't stored. Returns undo ops. */
   const commit = useCallback(
-    async (ops: Op[]): Promise<Op[]> => {
-      const undo = inverse(snapRef.current, ops);
+    (input: Op[] | ((s: Snapshot) => Op[])): Promise<Op[]> => {
       setSavingCount((n) => n + 1);
-      try {
-        // Record and its pending sync operation are written in one IndexedDB transaction (StillDb.write).
-        await db.write(ops);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        setSaveError({ message, ops });
-        showToast(tRef.current.save.saveFailedText(message));
-        throw e;
-      } finally {
-        setSavingCount((n) => n - 1);
-      }
-      setSnap((s) => applyOps(s, ops));
-      return undo;
+      const run = queue.current.then(async () => {
+        const ops = typeof input === 'function' ? input(snapRef.current) : input;
+        if (!ops.length) return [];
+        const undo = inverse(snapRef.current, ops);
+        try {
+          // Record and its pending sync operation are written in one IndexedDB transaction (StillDb.write).
+          await db.write(ops);
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          setSaveError({ message, ops });
+          showToast(tRef.current.save.saveFailedText(message));
+          throw e;
+        }
+        snapRef.current = applyOps(snapRef.current, ops); // the next queued write sees this one at once
+        setSnap(snapRef.current);
+        return undo;
+      });
+      queue.current = run.catch(() => {});
+      return run.finally(() => setSavingCount((n) => n - 1));
     },
     [db, showToast],
   );
 
   const commitWithUndo = useCallback(
-    async (ops: Op[], message: string) => {
-      const undo = await commit(ops);
-      showToast(message, () => void commit(undo).catch(() => {}));
+    async (input: Op[] | ((s: Snapshot) => Op[]), message: string | (() => string)) => {
+      const undo = await commit(input);
+      if (!undo.length) return;
+      showToast(typeof message === 'function' ? message() : message, () => void commit(undo).catch(() => {}));
     },
     [commit, showToast],
   );
@@ -242,15 +267,43 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
     async (habit, date, value, note, message) => {
       if (date > todayKey()) return showToast(tRef.current.toast.futureDay);
       if (habit.kind === 'weekly') return; // weekly goals only count saved analyses
-      const id = entryId(habit.id, date);
-      const prev = entries.get(id);
-      const v = Math.max(0, habit.kind === 'binary' ? Math.min(1, value) : Math.round(value * 100) / 100);
-      const n = note ?? prev?.note ?? '';
-      const rec: Entry | undefined = v === 0 && !n ? undefined : { id, habitId: habit.id, date, value: v, note: n, updatedAt: Date.now() };
-      if (message) await commitWithUndo([{ kind: 'entry', id, rec }], message);
-      else await commit([{ kind: 'entry', id, rec }]);
+      const ops = (s: Snapshot) => [entryOp(s, habit, date, () => value, note)];
+      if (message) await commitWithUndo(ops, message);
+      else await commit(ops);
     },
-    [entries, commit, commitWithUndo, showToast],
+    [commit, commitWithUndo, showToast],
+  );
+
+  const toggleEntry = useCallback(
+    async (habit: Habit, date: DateKey) => {
+      if (date > todayKey()) return showToast(tRef.current.toast.futureDay);
+      if (habit.kind !== 'binary') return;
+      let nowDone = false;
+      await commitWithUndo(
+        (s) => [entryOp(s, habit, date, (cur) => ((nowDone = cur < 1) ? 1 : 0))],
+        () => (nowDone ? tRef.current.toast.done(habit.name) : tRef.current.toast.reopened(habit.name)),
+      );
+    },
+    [commitWithUndo, showToast],
+  );
+
+  const stepEntry: Store['stepEntry'] = useCallback(
+    async (habit, date, delta) => {
+      if (date > todayKey()) return showToast(tRef.current.toast.futureDay);
+      if (habit.kind !== 'numeric') return;
+      let reached = false;
+      const target = ruleAt(habit, date).target;
+      await commit((s) => [
+        entryOp(s, habit, date, (cur) => {
+          const next = cur + delta;
+          reached = cur < target && next >= target;
+          return next;
+        }),
+      ]);
+      // Undo takes back exactly this step (later steps stay), never the whole value.
+      if (reached) showToast(tRef.current.toast.reached(habit.name), () => void stepEntry(habit, date, -delta).catch(() => {}));
+    },
+    [commit, showToast],
   );
 
   const ruleFromDraft = (d: Draft, kind: Habit['kind']) => {
@@ -375,10 +428,18 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
   const toggleCompletion = useCallback(
     async (habit: Habit, date: DateKey) => {
       if (date > todayKey()) return showToast(tRef.current.toast.futureDay);
-      const existing = !ruleAt(habit, date).multi ? find(snapRef.current.completions, completionId(habit.id, date)) : undefined;
-      if (existing) return commitWithUndo([{ kind: 'completion', id: existing.id }], tRef.current.toast.completionRemoved);
-      const c = makeCompletion(habit, date, Date.now());
-      await commitWithUndo([{ kind: 'completion', id: c.id, rec: c }], tRef.current.toast.completionAdded(habit.name));
+      let removed = false;
+      await commitWithUndo(
+        (s): Op[] => {
+          // Decided at write time: a second rapid tap sees the first tap's completion.
+          const existing = !ruleAt(habit, date).multi ? find(s.completions, completionId(habit.id, date)) : undefined;
+          removed = !!existing;
+          if (existing) return [{ kind: 'completion', id: existing.id }];
+          const c = makeCompletion(habit, date, Date.now());
+          return [{ kind: 'completion', id: c.id, rec: c }];
+        },
+        () => (removed ? tRef.current.toast.completionRemoved : tRef.current.toast.completionAdded(habit.name)),
+      );
     },
     [commitWithUndo, showToast],
   );
@@ -440,7 +501,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
     () => ({
       partition, snapshot: snap, status, error, habits, settings: snap.settings, today, toast, analyses: snap.analyses, journal: snap.journal,
       completions: snap.completions, sync, conflicts, getEntry, entriesOf, createHabit, updateHabit, setArchived, deleteHabit,
-      reorder, setEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion,
+      reorder, setEntry, toggleEntry, stepEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion,
       deleteCompletion, addExamples, replaceAll, applyOps: applyOpsCb, resolveConflict, syncNow: () => manager.current?.schedule(0),
       saving: savingCount > 0,
       saveError: saveError && {
@@ -454,7 +515,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
       drafts,
       showToast, dismissToast: () => setToast(null),
     }),
-    [partition, status, error, habits, snap, today, toast, sync, conflicts, savingCount, saveError, drafts, commit, getEntry, entriesOf, createHabit, updateHabit, setArchived, deleteHabit, reorder, setEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion, deleteCompletion, addExamples, replaceAll, applyOpsCb, resolveConflict, showToast],
+    [partition, status, error, habits, snap, today, toast, sync, conflicts, savingCount, saveError, drafts, commit, getEntry, entriesOf, createHabit, updateHabit, setArchived, deleteHabit, reorder, setEntry, toggleEntry, stepEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion, deleteCompletion, addExamples, replaceAll, applyOpsCb, resolveConflict, showToast],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

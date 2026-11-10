@@ -1,8 +1,9 @@
 import { animate, motion, useMotionValue, useTransform, type DragControls, type PanInfo } from 'framer-motion';
 import { useRef, useState } from 'react';
 import { useT } from '../i18n';
-import { formatNumber, startOfWeek, type DateKey } from '../lib/date';
+import { formatNumber, locale, startOfWeek, type DateKey } from '../lib/date';
 import { completionId, isComplete, isFrequencyAt, ruleAt, targetAt, type Habit } from '../lib/model';
+import { parseAmount, quickStep } from '../lib/today';
 import { countSource, weekLabel, weekStatus } from '../lib/weekly';
 import { useStore } from '../store';
 import { Icon, springs, useReduce, useSwipeBlur } from './ui';
@@ -24,7 +25,7 @@ interface Props {
 
 export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, onEdit, onAddAnalysis }: Props) {
   const t = useT();
-  const { getEntry, setEntry, setArchived, today, analyses, completions, settings, toggleCompletion } = useStore();
+  const { getEntry, setEntry, toggleEntry, stepEntry, setArchived, today, analyses, completions, settings, toggleCompletion } = useStore();
   const weekly = habit.kind === 'weekly'; // analyses
   const frequency = isFrequencyAt(habit, date); // "X-mal pro Woche"
   const multi = frequency && !!ruleAt(habit, date).multi;
@@ -36,6 +37,17 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
   const blur = useSwipeBlur(x);
   const [open, setOpen] = useState(false);
   const dragged = useRef(false);
+  // A tap is ignored while the previous one of this row is still being written, and a second "add" within
+  // 350 ms counts as an accidental double tap. Steppers are exempt: every tap is a deliberate step.
+  const busy = useRef(false);
+  const lastAdd = useRef(0);
+  const once = (fn: () => Promise<unknown>) => {
+    if (busy.current) return;
+    busy.current = true;
+    void fn()
+      .catch(() => {}) // failures stay visible through the save status and toast
+      .finally(() => (busy.current = false));
+  };
 
   const e = getEntry(habit.id, date);
   const target = targetAt(habit, date);
@@ -57,9 +69,16 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
 
   const toggle = () => {
     if (future || weekly) return; // a weekly analysis goal is only met by saved analyses
-    if (frequency) return void toggleCompletion(habit, date);
-    if (habit.kind === 'binary') setEntry(habit, date, done ? 0 : 1, undefined, done ? t.toast.reopened(habit.name) : t.toast.done(habit.name));
-    else setEntry(habit, date, done ? 0 : target, undefined, done ? t.toast.reset(habit.name) : t.toast.reached(habit.name));
+    if (frequency) {
+      if (multi) {
+        const now = Date.now();
+        if (now - lastAdd.current < 350) return;
+        lastAdd.current = now;
+      }
+      return once(() => toggleCompletion(habit, date));
+    }
+    if (habit.kind === 'binary') return once(() => toggleEntry(habit, date));
+    once(() => setEntry(habit, date, done ? 0 : target, undefined, done ? t.toast.reset(habit.name) : t.toast.reached(habit.name)));
   };
 
   const onDragEnd = (_: unknown, i: PanInfo) => {
@@ -72,10 +91,14 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
     setTimeout(() => (dragged.current = false), 0);
   };
 
-  const step = (d: number) => !future && setEntry(habit, date, Math.max(0, value + d));
+  const inc = quickStep(target);
+  const step = (d: number) => !future && void stepEntry(habit, date, d * inc).catch(() => {});
 
+  const currentWeek = !!week && week.start === startOfWeek(today, settings.weekStart);
   const label = week
-    ? week.achieved ? t.row.weekReached(weekLabel(week, habit.kind, t)) : t.row.thisWeek(weekLabel(week, habit.kind, t))
+    ? week.achieved
+      ? t.row.weekReached(weekLabel(week, habit.kind, t))
+      : currentWeek ? t.row.remaining(week.target - week.count, weekly) : t.row.pastWeek(weekLabel(week, habit.kind, t))
     : habit.kind === 'binary' ? (done ? t.common.done : t.common.open) : `${fmtNum(value)} / ${fmtNum(target)}${unit}`;
 
   return (
@@ -197,10 +220,11 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
           </motion.button>
         ) : (
           <div className="stepper">
-            <motion.button className="icon-btn round" onClick={() => step(-1)} disabled={future || value <= 0} aria-label={t.row.decrease(habit.name)} whileTap={reduce ? undefined : { scale: 0.86 }}>
+            <motion.button className="icon-btn round" onClick={() => step(-1)} disabled={future || value <= 0} aria-label={t.row.decrease(habit.name, fmtNum(inc))} whileTap={reduce ? undefined : { scale: 0.86 }}>
               <Icon name="minus" size={18} />
             </motion.button>
-            <motion.button className={'icon-btn round' + (done ? ' filled' : '')} onClick={() => step(1)} disabled={future} aria-label={t.row.increase(habit.name)} whileTap={reduce ? undefined : { scale: 0.86 }}>
+            <AmountInput value={value} disabled={future} label={t.row.amount(habit.name)} onCommit={(v) => void setEntry(habit, date, v).catch(() => {})} />
+            <motion.button className={'icon-btn round' + (done ? ' filled' : '')} onClick={() => step(1)} disabled={future} aria-label={t.row.increase(habit.name, fmtNum(inc))} whileTap={reduce ? undefined : { scale: 0.86 }}>
               {done ? <Icon name="check" size={18} /> : <Icon name="plus" size={18} />}
             </motion.button>
           </div>
@@ -211,3 +235,46 @@ export function HabitRow({ habit, date, sorting, dragControls, onMove, onOpen, o
 }
 
 export const fmtNum = formatNumber;
+
+const plain = (n: number) => n.toLocaleString(locale(), { maximumFractionDigits: 2, useGrouping: false });
+
+/**
+ * Direct entry for numeric habits. Shows the stored value; while focused the typed text is local, and it is
+ * saved on Enter or blur (Escape or invalid input restores the stored value). Typing never moves the row.
+ */
+function AmountInput({ value, label, disabled, onCommit }: { value: number; label: string; disabled: boolean; onCommit: (v: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const cancel = useRef(false);
+  const finish = () => {
+    const n = draft == null || cancel.current ? null : parseAmount(draft);
+    cancel.current = false;
+    setDraft(null);
+    if (n != null && n !== value) onCommit(n);
+  };
+  return (
+    <input
+      className="amount"
+      type="text"
+      inputMode="decimal"
+      enterKeyHint="done"
+      autoComplete="off"
+      aria-label={label}
+      disabled={disabled}
+      value={draft ?? plain(value)}
+      onFocus={(e) => {
+        setDraft(plain(value));
+        e.currentTarget.select();
+      }}
+      onPointerDown={(e) => e.stopPropagation()} // selecting text must not start the row swipe
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={finish}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') {
+          cancel.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}

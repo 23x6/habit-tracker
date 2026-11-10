@@ -60,8 +60,14 @@ export function Dashboard({ date }: { date: DateKey }) {
 
 const SIZE = 132;
 const STROKE = 9;
-const R = (SIZE - STROKE) / 2 - 6; // room for the glow
+const R = (SIZE - STROKE) / 2 - 6;
 const C = 2 * Math.PI * R;
+// The blurred glow reaches ~3σ (15) beyond the arc's outer edge (R + 5.5 ≈ 61), i.e. past the 66-unit half size.
+// An <svg> clips at its viewport, so the canvas extends PAD units beyond the ring box on every side (see CSS
+// `.ring-figure svg`); the ring itself keeps its size and position.
+const PAD = 14;
+const VIEW = `${-PAD} ${-PAD} ${SIZE + 2 * PAD} ${SIZE + 2 * PAD}`;
+const SVG_BOX = { left: `${(-PAD / SIZE) * 100}%`, top: `${(-PAD / SIZE) * 100}%`, width: `${((SIZE + 2 * PAD) / SIZE) * 100}%`, height: `${((SIZE + 2 * PAD) / SIZE) * 100}%` };
 
 /**
  * SVG donut. One motion value drives arc, glow and percentage, so rapid updates interrupt each other smoothly
@@ -103,13 +109,13 @@ function GlowRing({ ratio, ringKey, label }: { ratio: number | null; ringKey: st
   return (
     <motion.figure className="ring-figure" role="img" aria-label={label} style={{ scale }}>
       {/* Sized by CSS (.ring-figure); the viewBox keeps stroke and glow proportional at any size. */}
-      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true">
+      <svg viewBox={VIEW} style={SVG_BOX} aria-hidden="true">
         <defs>
           <linearGradient id={`g${id}`} x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stopColor="#f4f4f2" />
             <stop offset="100%" stopColor="#b9b9b5" />
           </linearGradient>
-          <filter id={`f${id}`} x="-30%" y="-30%" width="160%" height="160%">
+          <filter id={`f${id}`} filterUnits="userSpaceOnUse" x={-PAD} y={-PAD} width={SIZE + 2 * PAD} height={SIZE + 2 * PAD}>
             <feGaussianBlur stdDeviation="5" />
           </filter>
         </defs>

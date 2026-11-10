@@ -65,6 +65,69 @@ Email delivery:
 - Supabase's built-in email service only sends to addresses of the project's organization members and is heavily rate-limited.
 - For other people to register, configure custom SMTP (Authentication → Emails → SMTP Settings) with a provider of your choice. Not done; it needs the user's decision and possibly a paid plan.
 
+## Iteration 5 (2026-11-10): ring glow, "what remains today", quick actions
+
+### Ring glow
+- **Cause** (reproduced at 390 and 1440 px at 100 %): the glow (blur σ 5 on an arc whose outer edge is at 61 units) reaches about 76 units from the centre. The `<svg>` viewport was only 66 units, and an inner `<svg>` clips at its viewport (`overflow: hidden`), so the glow was cut off in straight lines at the left, right, top and bottom. The filter region and the ancestors weren't the cause; no other ancestor clips.
+- **Fix** (`Dashboard.tsx`, CSS):
+  - the viewBox is extended by 14 units on every side, and the SVG is positioned that far beyond the ring box, so the ring keeps its size and position;
+  - the filter region uses `userSpaceOnUse` over the whole canvas.
+- No horizontal overflow at 320, 390 or 1440 px. Animation and reduced motion are unchanged.
+
+### What remains today
+- New `src/lib/today.ts` (`todayItems`):
+  - groups `daily` (open daily habits), `weekly` (weekly goals of the selected date's week not yet reached) and `done`;
+  - manual order within each group;
+  - unscheduled, archived and not-yet-started habits are excluded.
+  - Display only: `lib/dashboard.ts` is unchanged.
+- `Today.tsx` renders one flat list (rows and headings), so a row that changes group glides to its place:
+  - headings for weekly goals and a collapsible "Erledigt · n" section (`aria-expanded`), remembered in `localStorage` (`still-done-open`);
+  - **hold while interacting:** rows keep their group while the pointer or keys are active (until 1.2 s of quiet) or while a value field has focus;
+  - empty states:
+    - nothing daily planned, but weekly goals are open;
+    - everything done;
+    - nothing planned at all (the existing state).
+
+### Quick actions and reliability
+- Store (`store.tsx`):
+  - all writes go through **one queue**. Ops can be built from the state left by all earlier writes, so rapid taps never compute from a stale render. The memory snapshot is updated right after each IndexedDB commit;
+  - same atomic record-plus-outbox write, failure handling and save status as before.
+- New store actions:
+  - `toggleEntry` (binary; decided at write time, with undo);
+  - `stepEntry` (numeric; adds a delta to the stored value. Undo after reaching the target takes back only that step);
+  - `toggleCompletion` now also decides at write time.
+- `HabitRow`:
+  - a tap is ignored while the same row's previous write is still running;
+  - a second "add" on a several-per-day habit within 350 ms counts as an accidental double tap;
+  - numeric rows get − and + (`quickStep`: 1 below a target of 100, otherwise a tenth of the order of magnitude) and a direct-entry field (`AmountInput`; saved on Enter or blur, Escape or invalid input restores the stored value; 16 px font, so iOS doesn't zoom);
+  - on phones (< 480 px) a numeric row hides its icon, so the name keeps room;
+  - weekly rows say "noch 2× diese Woche" / "2 more this week".
+
+### Verification
+- `npm run typecheck` clean, `npm test` **97/97** (12 new), `npm run build` OK.
+- New tests:
+  - `src/lib/today.test.ts`: grouping and order, exclusions, selected date and week, dashboard unchanged, step sizes, parsing;
+  - `src/screens/today.test.tsx` (jsdom, real store and IndexedDB):
+    - grouping with hold and the collapsible section;
+    - binary undo leaves unrelated data alone;
+    - 19 rapid + taps count fully (1900);
+    - undo of the target-crossing step only;
+    - direct entry, including invalid input;
+    - one per day: no duplicate on a double tap; several per day with the double-tap guard; undo removes only the latest;
+    - analysis goals have no completion shortcut;
+    - quick actions write to the selected date.
+  - **Mutation check:** with the old render-based step (`value + step`) the rapid-tap test fails (1000 instead of 1900).
+- **Browser (Chromium via Playwright, dev server, Playwright's own profile):**
+  - **Ring:** checked at 0 %, 80 % and 100 % at 390 and 1440 px; the glow is round and even with no flat edges; ring size unchanged.
+  - **Rapid input:** 20 rapid + taps gave exactly 2000; the row stayed in place during the taps and then moved to "Erledigt".
+  - **Direct entry:** "1.234,5" was rejected and restored; "1250,5" was saved; Escape restored; the value survived a reload.
+  - **Layout:** no horizontal overflow at 320, 390 and 1440 px.
+  - **English:** "Weekly goals", "Done · 5", "2 more analyses this week" and the accessible labels.
+- **Not verified:**
+  - real iPhone or Safari touch behaviour (tap timing, the decimal keyboard);
+  - quick actions against the real backend with sync between two devices;
+  - VoiceOver.
+
 ## Iteration 4 (2026-11-10): dashboard, segmented motion, DE/EN, header, autosave
 Not committed yet at the time of writing.
 
