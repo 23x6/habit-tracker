@@ -1,7 +1,11 @@
 # Still — Handoff
 
 ## Status (2026-11-10)
-Iteration 3 is implemented: accounts and sync (Supabase), "X-mal pro Woche" goals, the dashboard ring, refined motion, and the desktop layout. **The Supabase backend has not been connected yet:** no project or credentials were available and the Docker daemon wasn't running. All code, migrations and locally testable parts are done; real authentication and multi-device sync remain unverified (see "External setup"). Nothing is committed yet.
+Iteration 3 is implemented: accounts and sync (Supabase), "X-mal pro Woche" goals, the dashboard ring, refined motion, and the desktop layout. Branch `feature/still-app`.
+
+A real Supabase project is now connected for local use (app at `http://localhost:4173/`, config in the untracked `.env.local`). The hardened migration has been applied there.
+
+**Manually verified by the user:** sync in both directions between a normal browser window and an incognito window signed in to the same account. A habit and its completion synchronized correctly. Everything else against the real backend is still unverified (see "Not verified").
 
 ## Architecture (iteration 3)
 - `supabase/migrations/20261110000000_still_records.sql`:
@@ -20,7 +24,17 @@ Iteration 3 is implemented: accounts and sync (Supabase), "X-mal pro Woche" goal
 
 ## Validation results
 - `npm run typecheck`: clean. `npm run build`: OK (376 kB JS, 120 kB gzip).
-- `npm test`: **62/62 pass**, also with TZ America/New_York, Australia/Sydney and Pacific/Kiritimati.
+- `npm test`: **72/72 pass**, also with TZ America/New_York, Australia/Sydney and Pacific/Kiritimati (the original 62 plus the tests below).
+  - **Migration privileges** (added after the project was created with "auto-expose new tables" off and automatic RLS on):
+    - every privilege is revoked first, then `authenticated` gets only SELECT, INSERT and UPDATE on `records`, USAGE on the sequence and EXECUTE on `push_changes`;
+    - no DELETE for clients (deletions sync as tombstones); nothing for `anon` or `service_role`;
+    - RLS is enabled with four owner-only policies using `(select auth.uid())`;
+    - the function uses `search_path = ''`; the `force row level security` line was removed;
+    - verified in two modes (no default grants, and permissive Supabase-style defaults), including running the migration twice;
+    - mutation checks: an extra DELETE grant fails 3 tests; dropping the anon/service_role revoke fails the permissive-mode audit.
+  - **Input focus** (`src/components/focus.test.tsx`, jsdom): types into the real login, registration and password-reset forms one character at a time and checks focus after each. It also covers mid-text edits, selection replacement, deletion, paste and validation messages.
+    - Root cause: `Sheet` re-ran its focus effect whenever an inline `onClose` prop changed, i.e. on every keystroke, and moved focus to the panel.
+    - On the old code 5 of 6 tests fail exactly like the bug.
   - **Server isolation (real SQL, PGlite):**
     - user B can't read, update, delete or forge user A's rows;
     - B can't hand its own row to A;
@@ -68,14 +82,23 @@ Iteration 3 is implemented: accounts and sync (Supabase), "X-mal pro Woche" goal
     - Glow peaked at 1.0, and exactly one pulse ran (scale 1 → 1.045 → 1 over 0.6 s); an immediate undo/redo didn't pulse again.
   - **Auth UI**, using a build pointed at an unreachable address: validation messages, password rules, the German network error, login/register/forgot navigation; the app stays in local mode after a failure. No success was simulated.
   - **Other:** offline reload of the new build; reduced motion (no glow element, text summary intact); swipe blur reaches its 14 px cap at a real frame rate and is gone at rest; no horizontal overflow at 320 px.
+- **Real Supabase project (manual, by the user):**
+  - Signed in to the same account in a normal and an incognito browser window.
+  - A habit and its completion synced in both directions.
+- **Real Supabase project (automated checks, without signing in):**
+  - Auth health and settings respond; email signup is enabled and email confirmation required.
+  - Without a login, both `records` and `push_changes` return permission denied (42501).
+  - The browser at `http://localhost:4173/` reaches the project (CORS).
+  - Only a publishable key is in the bundle.
 - **Bugs found and fixed during verification:**
+  - Typing in sheet forms lost focus after every character (see "Input focus" above).
   - Postgres jsonb key order caused false conflicts → canonical comparison.
   - The `today` screen class collided with the weekday button class (broken week strip on desktop).
   - The week strip overflowed at 320 px.
   - The account mode line wrapped badly.
 
-## External setup required (to finish accounts and sync)
-See README "Enabling accounts and sync":
+## External setup (done for local use; repeat for a deployment)
+See README "Enabling accounts and sync". For the local setup: project created, migration applied, `.env.local` filled, Site URL and Redirect URL `http://localhost:4173/`. For a hosted deployment:
 1. create a Supabase project;
 2. run the migration;
 3. keep email confirmation on;
@@ -84,18 +107,18 @@ See README "Enabling accounts and sync":
 6. fill `.env.local` from `.env.example` (URL and anon key only);
 7. build and deploy.
 
-Then verify:
-- register → confirmation email → sign in;
-- password reset;
-- two browser sessions with the same account (edit on one, see it on the other; offline edit then reconnect; a journal conflict);
+Still to verify manually:
+- password reset by email;
+- offline edit, then reconnect; a journal conflict between two sessions;
 - a second account can't see the first account's data;
 - sign-out and account switch show no other account's data.
 
 Alternatively, run `npx supabase start` with Docker for a local stack.
 
 ## Not verified
-- **Anything against a real Supabase instance:** Auth emails, links, session refresh, PostgREST behaviour, and sync between two real sessions.
-- Real iPhone/Android devices (keyboard behaviour, install, touch feel) and Safari.
+- **Cross-user isolation against the real project, manually.** It's covered only by the automated RLS tests against the migration (PGlite), plus the anonymous permission-denied checks above.
+- **Against the real project:** password reset, offline reconnect, conflict resolution, the local-data import, sign-out cache removal, and account switching.
+- **Real iPhone/Android devices** (keyboard behaviour, install, touch feel) and Safari. The two-session sync test ran in desktop browser windows only.
 - Screen readers beyond roles and labels.
 
 ## Remaining / ideas

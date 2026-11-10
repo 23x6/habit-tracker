@@ -2,7 +2,20 @@
 --
 -- One row per synced object (habit, daily entry, weekly completion, analysis, journal entry, settings).
 -- `data` holds the client's JSON record; the client validates it on every pull.
--- Ownership is enforced by Row Level Security for every operation; the client never sees other users' rows.
+--
+-- Security model (does not rely on Supabase default grants or "auto-expose new tables"):
+--   • Every privilege is revoked first, then only what the app needs is granted, to `authenticated` only:
+--       table:    SELECT (pull), INSERT + UPDATE (used by push_changes, which runs with the caller's rights)
+--       sequence: USAGE (nextval for the change counter)
+--       function: EXECUTE on push_changes
+--     No DELETE: rows are never deleted by clients; deletions sync as tombstones (deleted = true).
+--     `anon` and `service_role` get nothing.
+--   • Row Level Security is enabled and every operation (including DELETE, which is not granted anyway)
+--     is restricted to rows where user_id = auth.uid().
+--
+-- Safe to run more than once.
+
+-- ---------- objects ----------
 
 create sequence if not exists public.records_seq;
 
@@ -26,26 +39,37 @@ create table if not exists public.records (
 
 create index if not exists records_user_seq on public.records (user_id, seq);
 
-alter table public.records enable row level security;
-alter table public.records force row level security;
+-- ---------- row level security ----------
 
+alter table public.records enable row level security;
+
+-- Recreate this table's policies so a re-run always ends in exactly this state.
 drop policy if exists records_select_own on public.records;
 drop policy if exists records_insert_own on public.records;
 drop policy if exists records_update_own on public.records;
 drop policy if exists records_delete_own on public.records;
 
+-- `(select auth.uid())` is evaluated once per statement instead of once per row.
 create policy records_select_own on public.records
-  for select to authenticated using (user_id = auth.uid());
+  for select to authenticated using (user_id = (select auth.uid()));
 create policy records_insert_own on public.records
-  for insert to authenticated with check (user_id = auth.uid());
+  for insert to authenticated with check (user_id = (select auth.uid()));
 create policy records_update_own on public.records
-  for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+  for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 create policy records_delete_own on public.records
-  for delete to authenticated using (user_id = auth.uid());
+  for delete to authenticated using (user_id = (select auth.uid()));
 
-revoke all on public.records from anon, public;
-grant select, insert, update, delete on public.records to authenticated;
-grant usage, select on sequence public.records_seq to authenticated;
+-- ---------- privileges (explicit; nothing inherited from defaults) ----------
+
+grant usage on schema public to authenticated;
+
+revoke all on table public.records from public, anon, authenticated, service_role;
+grant select, insert, update on table public.records to authenticated;
+
+revoke all on sequence public.records_seq from public, anon, authenticated, service_role;
+grant usage on sequence public.records_seq to authenticated;
+
+-- ---------- write API ----------
 
 -- Applies a batch of client changes. Runs with the caller's rights (SECURITY INVOKER), so RLS applies.
 -- Each change: {kind, id, data (json or null), deleted (bool), base (bigint), op (uuid)}.
@@ -54,7 +78,7 @@ create or replace function public.push_changes(changes jsonb)
 returns jsonb
 language plpgsql
 security invoker
-set search_path = public
+set search_path = ''
 as $$
 declare
   uid uuid := auth.uid();
@@ -117,5 +141,5 @@ begin
 end;
 $$;
 
-revoke all on function public.push_changes(jsonb) from public, anon;
+revoke all on function public.push_changes(jsonb) from public, anon, authenticated, service_role;
 grant execute on function public.push_changes(jsonb) to authenticated;

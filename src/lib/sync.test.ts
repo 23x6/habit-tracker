@@ -37,7 +37,9 @@ describe('server: row level security', () => {
 
     expect(await server.as(B, 'select * from public.records')).toEqual([]);
     expect(await server.as(B, `update public.records set data = '{"x":1}' where user_id = $1 returning id`, [A])).toEqual([]);
-    expect(await server.as(B, 'delete from public.records where user_id = $1 returning id', [A])).toEqual([]);
+    // Clients may not delete rows at all (deletions sync as tombstones), neither others' nor their own.
+    await expect(server.as(B, 'delete from public.records where user_id = $1 returning id', [A])).rejects.toThrow(/permission denied/);
+    await expect(server.as(A, 'delete from public.records returning id')).rejects.toThrow(/permission denied/);
     await expect(
       server.as(B, `insert into public.records (user_id, kind, id, data) values ($1, 'journal', 'evil', '{}')`, [A]),
     ).rejects.toThrow(/row-level security/);
@@ -66,6 +68,52 @@ describe('server: row level security', () => {
     expect((await server.remote(A).pull(0, 100)).map((r) => r.id)).toEqual(['h']);
   });
 });
+
+// Privileges must be exactly the necessary ones, whether or not the project hands out default grants.
+for (const mode of ['none', 'permissive'] as const) {
+  describe(`server: explicit privileges (default grants: ${mode})`, () => {
+    let srv: TestServer;
+    beforeAll(async () => {
+      srv = await createServer(mode);
+    }, 60_000);
+
+    it('grants only SELECT/INSERT/UPDATE to authenticated, nothing to anon or service_role; RLS on with four owner policies', async () => {
+      const q = async (sql: string) => (await srv.pg.query<{ v: unknown }>(sql)).rows[0].v;
+      const table = async (role: string) =>
+        (await srv.pg.query<{ p: string }>(
+          `select p from unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p where has_table_privilege('${role}', 'public.records', p) order by p`,
+        )).rows.map((r) => r.p);
+      expect(await table('authenticated')).toEqual(['INSERT', 'SELECT', 'UPDATE']);
+      expect(await table('anon')).toEqual([]);
+      expect(await table('service_role')).toEqual([]);
+      expect(await q(`select has_sequence_privilege('authenticated', 'public.records_seq', 'USAGE') as v`)).toBe(true);
+      expect(await q(`select has_sequence_privilege('anon', 'public.records_seq', 'USAGE') as v`)).toBe(false);
+      expect(await q(`select has_function_privilege('authenticated', 'public.push_changes(jsonb)', 'EXECUTE') as v`)).toBe(true);
+      expect(await q(`select has_function_privilege('anon', 'public.push_changes(jsonb)', 'EXECUTE') as v`)).toBe(false);
+      expect(await q(`select has_function_privilege('service_role', 'public.push_changes(jsonb)', 'EXECUTE') as v`)).toBe(false);
+      expect(await q(`select relrowsecurity as v from pg_class where oid = 'public.records'::regclass`)).toBe(true);
+      const policies = (await srv.pg.query<{ cmd: string; roles: string[]; qual: string | null; with_check: string | null }>(
+        `select cmd, roles::text[] as roles, qual, with_check from pg_policies where tablename = 'records' order by cmd`,
+      )).rows;
+      expect(policies.map((p) => p.cmd)).toEqual(['DELETE', 'INSERT', 'SELECT', 'UPDATE']);
+      for (const p of policies) {
+        expect(p.roles).toEqual(['authenticated']);
+        for (const expr of [p.qual, p.with_check].filter(Boolean)) expect(expr).toMatch(/user_id = \( SELECT auth\.uid\(\)/);
+      }
+    });
+
+    it('the app works with exactly these privileges', async () => {
+      const u = '00000000-0000-4000-8000-0000000000c1';
+      await srv.addUser(u);
+      const r = srv.remote(u);
+      const [res] = await r.push([{ kind: 'habit', id: 'h', data: habit('h'), deleted: false, base: 0, op: crypto.randomUUID() }]);
+      expect(res.status).toBe('ok');
+      const [upd] = await r.push([{ kind: 'habit', id: 'h', data: null, deleted: true, base: 1, op: crypto.randomUUID() }]);
+      expect(upd).toMatchObject({ status: 'ok', version: 2 });
+      expect((await r.pull(0, 10)).map((x) => [x.id, x.deleted])).toEqual([['h', true]]);
+    });
+  });
+}
 
 describe('sync engine', () => {
   it('offline changes stay queued, retry safely, and reach the second device', async () => {

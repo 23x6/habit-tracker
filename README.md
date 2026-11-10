@@ -114,7 +114,7 @@ Android Chrome: menu → *App installieren*. Desktop Chrome/Edge: the install ic
 
 ## Limitations
 
-- **The Supabase integration has not been run against a real project yet.** No credentials were available. Server rules and sync logic are tested against the real migration in PGlite (an in-process Postgres) with a stand-in for `auth.uid()`; the real Supabase Auth flows (emails, links, sessions) and sync between two real devices remain untested.
+- **Only partly verified against a real Supabase project.** Sign-in and sync of a habit and its completion between two browser sessions of the same account were tested manually on desktop. Not yet tested against the real project: password reset, offline reconnect, conflict resolution, cross-user isolation (covered by automated RLS tests against the migration in PGlite) and real mobile devices.
 - **Sync isn't real-time:** it polls (on start, after edits, on focus, every 30 s).
 - **Structured conflicts:** for non-text records (e.g. a habit renamed differently on two devices), the server version wins.
 - **Reminders only fire while Still is open** (no push). Weekly goals have no reminders.

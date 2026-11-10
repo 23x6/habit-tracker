@@ -94,7 +94,7 @@ export function AccountSection() {
 
 // ---------- sign in / register / forgot ----------
 
-function AuthSheet({ mode, onMode }: { mode: null | 'login' | 'register' | 'forgot'; onMode: (m: null | 'login' | 'register' | 'forgot') => void }) {
+export function AuthSheet({ mode, onMode }: { mode: null | 'login' | 'register' | 'forgot'; onMode: (m: null | 'login' | 'register' | 'forgot') => void }) {
   const auth = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

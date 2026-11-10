@@ -59,7 +59,13 @@ export function Sheet({ open, onClose, title, children, footer }: { open: boolea
   const reduce = useReduce();
   const panel = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  // Callers often pass an inline `onClose`, which is a new function on every render. Reading it through a ref
+  // keeps the effect below tied to `open` only; otherwise every keystroke in a form re-ran it and moved focus
+  // to the panel.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
+  // Runs once per open/close: initial focus on the panel, Escape + focus trap, focus restored on close.
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
@@ -67,16 +73,20 @@ export function Sheet({ open, onClose, title, children, footer }: { open: boolea
       // Only the topmost sheet reacts (a confirmation can open above another sheet).
       const sheets = document.querySelectorAll('.sheet');
       if (sheets[sheets.length - 1] !== panel.current) return;
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
       if (e.key === 'Tab' && panel.current) trapFocus(e, panel.current);
     };
     document.addEventListener('keydown', onKey);
-    requestAnimationFrame(() => panel.current?.focus());
+    const raf = requestAnimationFrame(() => {
+      // Don't steal focus from a field the user already moved into.
+      if (!panel.current?.contains(document.activeElement)) panel.current?.focus();
+    });
     return () => {
+      cancelAnimationFrame(raf);
       document.removeEventListener('keydown', onKey);
       prev?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   const onDragEnd = (_: unknown, i: PanInfo) => {
     if (i.offset.y > 120 || i.velocity.y > 600) onClose();
