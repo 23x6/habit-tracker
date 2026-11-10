@@ -9,6 +9,13 @@ const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 export const backendConfigured = !!(url && key);
 
+/**
+ * The page was opened from a sign-in link in an email (confirmation), read before the client consumes the URL.
+ * Password-recovery links are excluded: they lead to the new-password form, not a normal sign-in.
+ */
+export const signInLinkAtLoad =
+  typeof location !== 'undefined' && /access_token=|[?&#]code=/.test(location.href) && !/type=recovery/.test(location.href);
+
 export const supabase: SupabaseClient | null = backendConfigured
   ? createClient(url!, key!, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;

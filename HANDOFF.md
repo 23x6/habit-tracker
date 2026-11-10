@@ -65,6 +65,72 @@ Email delivery:
 - Supabase's built-in email service only sends to addresses of the project's organization members and is heavily rate-limited.
 - For other people to register, configure custom SMTP (Authentication → Emails → SMTP Settings) with a provider of your choice. Not done; it needs the user's decision and possibly a paid plan.
 
+## Iteration 6 (2026-11-10): activity streak, flame, login welcome
+Plan and open decisions: ROADMAP.md. The reference GIF named in the request was not available (not in the repository or the conversation). The artwork is original SVG built from the written description.
+
+### Streak rules (`src/lib/streak.ts`; per-habit streaks in `model.ts` unchanged)
+- **Action:** a done/not-done habit checked off, numeric value > 0, an "X-mal pro Woche" completion, or a saved analysis.
+  - The habit must be active that day (started, not archived or paused).
+  - Journal notes, drafts and signing in never count. Several actions on one day count once.
+- **Day states** (local calendar days, historical rules via `isScheduled` / `isWeeklyGoalAt`):
+  - `done`: an action on a day with a habit due by its daily schedule, or with a weekly goal in force;
+  - `missed`: a daily-scheduled habit was due, the day has ended, and nothing was recorded;
+  - `frozen`: see Freeze;
+  - `pending`: today or later, still earnable;
+  - `none`: neutral.
+  - Weekly-goal-only days can earn but never break (see ROADMAP "Open questions"). An unfinished today never breaks the streak.
+- **Freeze:**
+  - one per calendar week (configured week start), applied to the first otherwise missed day of that week, only after it has ended and only while a streak exists;
+  - a frozen day keeps the streak but adds nothing and never counts as done (statistics are untouched);
+  - a further missed day breaks the streak.
+- **Deterministic:** derived entirely from the stored history. Nothing new is stored and there is no schema change, so two devices can't spend a freeze twice. Undo, deletion and backdating recompute the result.
+
+### UI (`src/components/Streak.tsx`)
+- **Flame:** original SVG.
+  - States: lit (silver gradient, soft glow), frozen (frosted, hatched, snowflake badge, so it reads without colour) and cold (outline, no streak).
+  - The canvas is padded by 24 units, so the blurred glow (3σ = 21) is never clipped.
+  - Motion is one-shot CSS: ignite with a transient blur and 5 sparks, once; a flare on a newly earned day. `animation-fill-mode: backwards`, so no filter or transform remains at rest. Reduced motion: a 150 ms fade or static.
+- **Dashboard badge** below the ring:
+  - flame, number, "Tag/Tage in Folge aktiv", and the current week's 7-day strip with distinct icons (flame, snowflake, ×, dashed circle, dot);
+  - it opens a sheet with the explanation (DE/EN rules), the freeze status, the longest streak, a 5-week history with per-day accessible labels and a legend;
+  - the ring's own calculations are unchanged.
+- **Celebration:** only when the streak grows after a durably committed local write. The store exposes `localWrites`, incremented after the IndexedDB commit. A reload, sync pull or first render never celebrates.
+- **Welcome:**
+  - **When it is triggered:** `AuthProvider.signIn` sets `welcomeFor` after a successful password sign-in. The first session from an email sign-in link opened in this page load also sets it (`welcomeOnAuthEvent` with `signInLinkAtLoad`, read before supabase-js consumes the URL). Restored sessions, `TOKEN_REFRESHED`, `USER_UPDATED` and re-emitted `SIGNED_IN` events never do.
+  - **When it opens** (`welcomeStep`): once the account data has loaded and the first sync has settled (synced, offline or error), or after 5 s, so it never blocks.
+  - **What it shows:** the real streak (no count-up, and "Das Anmelden selbst zählt nicht als Aktivität"). It says whether the number is verified (synced with nothing pending) or this device's data.
+  - **Interaction:** Continue (focused), Escape and the close button dismiss it; focus returns.
+  - **Settings:** "Serien-Animation nach dem Anmelden überspringen" (per device, `localStorage` `still-skip-streak-welcome`).
+
+### Verification
+- `npm run typecheck` clean, `npm test` **117/117** (20 new), `npm run build` OK.
+- `src/lib/streak.test.ts` (13):
+  - zero-day state (no freeze without a streak); first day; several actions on one day count once;
+  - numeric > 0 counts, zero values and note-only entries don't;
+  - pending today; unscheduled weekend neutral; weekly goals earn but don't break;
+  - freeze; protected state; second missed day breaks;
+  - week boundaries with Monday vs Sunday start; undo and backdating; archived periods; future days.
+- `src/components/streak.test.tsx` (7, jsdom, real store and IndexedDB):
+  - explicit-login decision (restored session, token refresh, user update and focus `SIGNED_IN` don't trigger it);
+  - waiting and never blocking; the verified label;
+  - the welcome shows the real number (2), not blocked by a never-settling sync, Continue focused, Escape dismisses, shown once;
+  - no welcome without an explicit sign-in or when skipped;
+  - account switching (A 2 days, B 0, A 2 again);
+  - celebration only after a saved action, not on reload; undo recomputes.
+- **Found while testing:** Vitest loads `.env.local`. A first version of the component test used `sync: true` partitions with a fake user id, so the SyncManager sent real requests to the configured Supabase project. They were rejected: no session; "invalid input syntax for type uuid". Nothing was written. The tests now use local partitions only; no other test talks to the real backend (sync tests use PGlite).
+- **Browser (Chromium via Playwright, dev server, Playwright's own profile; welcome via a temporary preview page with a local partition and a fake auth context, deleted again):**
+  - **Dashboard badge** at 320, 390 and 1440 px: no horizontal overflow.
+  - **Sheet:** opens; Escape closes it and focus returns to the badge; 35 history cells, each with a label.
+  - **Flames:** lit, frozen and cold at 140 px and 30 px. The glow isn't clipped; after the ignite no filter remains on the flame body and the sparks end invisible.
+  - **Welcome:** at 390 and 1440 px with a real 8-day streak protected by a freeze (frozen flame, note) and with 9 days lit; Continue focused.
+  - **Reduced motion** (emulated): `flame-fade` only.
+- **Not verified:**
+  - a real sign-in against Supabase (password or email link) showing the welcome;
+  - a real token refresh;
+  - two real devices computing the same freeze;
+  - Safari or iPhone rendering of the SVG filter and CSS animations on SVG elements;
+  - VoiceOver.
+
 ## Iteration 5 (2026-11-10): ring glow, "what remains today", quick actions
 
 ### Ring glow

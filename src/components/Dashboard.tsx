@@ -5,6 +5,7 @@ import { addDays, formatShort, startOfWeek, type DateKey } from '../lib/date';
 import { dayProgress, percent, shouldCelebrate, weekProgress, type Progress } from '../lib/dashboard';
 import { weekEnd } from '../lib/weekly';
 import { useStore } from '../store';
+import { StreakBadge } from './Streak';
 import { Segmented, SwitchContent, useReduce } from './ui';
 
 type Mode = 'day' | 'week';
@@ -54,6 +55,8 @@ export function Dashboard({ date }: { date: DateKey }) {
           </div>
         </SwitchContent>
       </div>
+      {/* Activity streak: its own rules (lib/streak.ts); the ring above keeps its own calculations. */}
+      <StreakBadge />
     </section>
   );
 }

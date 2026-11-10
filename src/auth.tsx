@@ -1,13 +1,13 @@
 import type { AuthError, Session } from '@supabase/supabase-js';
-import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import { useT } from './i18n';
 import type { Messages } from './i18n/messages';
-import { authErrorText, authReducer, isUnconfirmedError, type AuthEventType, type AuthState } from './lib/auth';
-import { supabase } from './lib/remote';
+import { authErrorText, authReducer, isUnconfirmedError, welcomeOnAuthEvent, type AuthEventType, type AuthState } from './lib/auth';
+import { signInLinkAtLoad, supabase } from './lib/remote';
 
 type Result = { ok: true; message?: string } | { ok: false; error: string; unconfirmed?: boolean };
 
-interface Auth {
+export interface Auth {
   state: AuthState;
   signIn(email: string, password: string): Promise<Result>;
   signUp(email: string, password: string): Promise<Result>;
@@ -15,9 +15,14 @@ interface Auth {
   sendReset(email: string): Promise<Result>;
   updatePassword(password: string): Promise<Result>;
   resendConfirmation(email: string): Promise<Result>;
+  /** Account id that just signed in explicitly and hasn't seen the streak welcome yet (memory only). */
+  welcomeFor: string | null;
+  consumeWelcome(): void;
 }
 
-const Ctx = createContext<Auth | null>(null);
+/** Exported for tests that need a specific auth state; the app uses AuthProvider. */
+export const AuthContext = createContext<Auth | null>(null);
+const Ctx = AuthContext;
 export const useAuth = () => {
   const a = useContext(Ctx);
   if (!a) throw new Error('AuthProvider missing');
@@ -32,12 +37,21 @@ const redirectTo = () => location.origin + location.pathname;
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, supabase ? { status: 'loading' } : { status: 'disabled' });
   const t = useT();
+  const [welcomeFor, setWelcomeFor] = useState<string | null>(null);
+  const linkHandled = useRef(false);
+  const consumeWelcome = useCallback(() => setWelcomeFor(null), []);
 
   useEffect(() => {
     if (!supabase) return;
     // INITIAL_SESSION arrives first (restored session, or a confirmation / recovery link in the URL).
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
-      dispatch({ type: event as AuthEventType, user: userOf(session) });
+      const user = userOf(session);
+      dispatch({ type: event as AuthEventType, user });
+      if (!user) return setWelcomeFor(null);
+      if (welcomeOnAuthEvent(event as AuthEventType, signInLinkAtLoad, linkHandled.current)) {
+        linkHandled.current = true;
+        setWelcomeFor(user.id);
+      }
     });
     return () => data.subscription.unsubscribe();
   }, []);
@@ -54,7 +68,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     return {
       state,
-      signIn: (email, password) => call(() => supabase!.auth.signInWithPassword({ email: email.trim(), password })),
+      async signIn(email, password) {
+        if (!supabase) return { ok: false, error: t.auth.notConfigured };
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+          if (error) return fail(error, t);
+          if (data.user) setWelcomeFor(data.user.id); // explicit sign-in: show the streak welcome once
+          return { ok: true };
+        } catch (e) {
+          return fail(e as Error, t);
+        }
+      },
       async signUp(email, password) {
         if (!supabase) return { ok: false, error: t.auth.notConfigured };
         try {
@@ -73,8 +97,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updatePassword: (password) => call(() => supabase!.auth.updateUser({ password }), t.auth.passwordSaved),
       resendConfirmation: (email) =>
         call(() => supabase!.auth.resend({ type: 'signup', email: email.trim(), options: { emailRedirectTo: redirectTo() } }), t.auth.confirmResent),
+      welcomeFor,
+      consumeWelcome,
     };
-  }, [state, t]);
+  }, [state, t, welcomeFor, consumeWelcome]);
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
 }

@@ -17,6 +17,15 @@ export type AuthState =
 
 export type AuthEventType = 'INITIAL_SESSION' | 'SIGNED_IN' | 'SIGNED_OUT' | 'TOKEN_REFRESHED' | 'USER_UPDATED' | 'PASSWORD_RECOVERY';
 
+/**
+ * Whether an auth event is an explicit sign-in that should show the post-login welcome (besides a successful
+ * password sign-in, which is handled where it happens). Only the first session from an email sign-in link opened in
+ * this page load counts. Restored sessions, token refreshes, user updates and focus-triggered SIGNED_IN events don't.
+ */
+export function welcomeOnAuthEvent(type: AuthEventType, fromSignInLink: boolean, alreadyHandled: boolean): boolean {
+  return fromSignInLink && !alreadyHandled && (type === 'SIGNED_IN' || type === 'INITIAL_SESSION');
+}
+
 export function authReducer(state: AuthState, event: { type: AuthEventType; user: AuthUser | null }): AuthState {
   if (state.status === 'disabled') return state;
   if (!event.user) return { status: 'signedOut' };

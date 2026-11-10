@@ -58,6 +58,12 @@ To test without the cloud, `npx supabase start` runs a complete local stack, inc
     - "X-mal pro Woche": one tap adds a completion for the selected day, within the one-per-day limit unless several per day are allowed;
     - analysis goals: only "Analyse hinzufügen", never a completion shortcut.
   - Rapid taps are written one after another, each from the latest stored value, so none is lost or duplicated.
+  - **Aktiv-Serie (activity streak):** a flame with the number of days in a row with at least one recorded habit action, plus this week's 7-day strip (active, frozen, missed, open, nothing planned).
+    - Tap it for the rules and a 5-week history.
+    - Days with nothing planned are neutral; the current day never breaks the streak.
+    - One automatic freeze per week covers the first missed day; a second missed day ends the streak.
+    - It measures consistency, not "all goals done". Per-habit streaks are unchanged.
+    - After an explicit sign-in, a one-time welcome shows the account's real streak. It can be turned off per device in Settings.
 - **Habit types and schedules:**
   - Done/not done or a numeric value (target and unit).
   - Daily or on selected weekdays.

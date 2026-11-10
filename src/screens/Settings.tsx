@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { AccountSection, LangSwitch } from '../components/Account';
+import { readSkipWelcome, writeSkipWelcome } from '../components/Streak';
 import { useT } from '../i18n';
 import { Confirm, Segmented, Sheet } from '../components/ui';
 import { toExport, validateImport } from '../lib/io';
@@ -17,6 +18,7 @@ export function Settings() {
   const [pending, setPending] = useState<{ data: Snapshot; fromVersion: number } | null>(null);
   const [importErrors, setImportErrors] = useState<string[] | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [skipWelcome, setSkipWelcome] = useState(readSkipWelcome);
   const file = useRef<HTMLInputElement>(null);
   const withReminder = habits.filter((h) => h.reminder && !isArchived(h)).length;
 
@@ -86,6 +88,11 @@ export function Settings() {
           <Segmented<S['motion']> label={t.settings.motion} value={settings.motion} onChange={(v) => setSettings({ motion: v })} options={[{ value: 'system', label: t.settings.motionSystem }, { value: 'reduce', label: t.settings.motionReduce }, { value: 'full', label: t.settings.motionFull }]} />
         </div>
         <p className="muted small">{t.settings.motionNote}</p>
+        <label className="switch-row">
+          <span>{t.streak.skipSetting}</span>
+          <input type="checkbox" role="switch" checked={skipWelcome} onChange={(e) => (setSkipWelcome(e.target.checked), writeSkipWelcome(e.target.checked))} />
+        </label>
+        <p className="muted small">{t.streak.skipNote}</p>
       </section>
 
       <section className="card">

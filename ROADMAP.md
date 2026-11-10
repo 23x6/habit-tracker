@@ -1,0 +1,28 @@
+# Roadmap
+
+Live: https://still-ashy-seven.vercel.app/ (Vercel project `still`, deployed from `feature/still-app`). Details and verification: HANDOFF.md.
+
+## Done
+1. **Core PWA:** habits, journal, weekly analyses, offline storage.
+2. **Accounts and sync:** Supabase with RLS. "X-mal pro Woche" goals. Dashboard ring.
+3. **Interface:** DE/EN, autosave and drafts, large dashboard, schedule-selector fix.
+4. **Deployment:** Vercel production deployment.
+5. **Today list:** ring glow fix, "what remains today" grouping, quick actions.
+6. **Activity streak (this iteration):**
+   - app-wide consistency streak with a weekly freeze;
+   - dashboard flame and 7-day strip, with an explanation and 5-week history;
+   - one-time welcome after an explicit sign-in.
+
+   Rules: HANDOFF.md, "Iteration 6".
+
+## Next (named by the user, not started)
+- Weekly reviews.
+- Reminders beyond the open app.
+- Pauses (planned breaks as a feature, beyond archiving).
+- Journal search.
+
+## Open questions / decisions to confirm
+- **Streak and weekly goals.** Days with only a weekly goal in force can *earn* a streak day but never *break* it. Otherwise everyone with a "3× pro Woche" goal would need activity every day. A day where only an unscheduled habit was recorded (e.g. a weekday habit done on Saturday) is neutral, per the "neutral days neither increase nor break" rule.
+- **Reference GIF.** The GIF mentioned in the request never reached the repository or the conversation. The artwork follows the written description (ignition, number inside the flame, 7-day strip, frozen state). It should be compared with the GIF.
+- **Name.** The request says "RYVO". The app, manifest and stored-data identifiers still say "Still". A rename would be a separate, deliberate change (the stored-data identifiers must stay).
+- **"Skip the animation" setting.** It is stored per device (`localStorage`), not per account.

@@ -87,6 +87,8 @@ interface Store {
   syncNow: () => void;
   /** Local writes in flight (IndexedDB transaction not yet committed). */
   saving: boolean;
+  /** Counts local writes that have been durably committed (not sync pulls): lets UI react to the user's own saves. */
+  localWrites: number;
   /** Last local write that failed; nothing of it was stored. `retry` writes the same change again. */
   saveError: { message: string; retry: () => void } | null;
   /** Unsent form text (journal / analysis drafts), stored in this partition's local database only. */
@@ -156,6 +158,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
   const [today, setToday] = useState(todayKey());
   const [toast, setToast] = useState<Toast | null>(null);
   const [savingCount, setSavingCount] = useState(0);
+  const [localWrites, setLocalWrites] = useState(0);
   const [saveError, setSaveError] = useState<{ message: string; ops: Op[] } | null>(null);
   // Toast texts are produced inside long-lived callbacks: read the current language through a ref.
   const t = useT();
@@ -240,6 +243,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
         }
         snapRef.current = applyOps(snapRef.current, ops); // the next queued write sees this one at once
         setSnap(snapRef.current);
+        setLocalWrites((n) => n + 1);
         return undo;
       });
       queue.current = run.catch(() => {});
@@ -504,6 +508,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
       reorder, setEntry, toggleEntry, stepEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion,
       deleteCompletion, addExamples, replaceAll, applyOps: applyOpsCb, resolveConflict, syncNow: () => manager.current?.schedule(0),
       saving: savingCount > 0,
+      localWrites,
       saveError: saveError && {
         message: saveError.message,
         retry: () => {
@@ -515,7 +520,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
       drafts,
       showToast, dismissToast: () => setToast(null),
     }),
-    [partition, status, error, habits, snap, today, toast, sync, conflicts, savingCount, saveError, drafts, commit, getEntry, entriesOf, createHabit, updateHabit, setArchived, deleteHabit, reorder, setEntry, toggleEntry, stepEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion, deleteCompletion, addExamples, replaceAll, applyOpsCb, resolveConflict, showToast],
+    [partition, status, error, habits, snap, today, toast, sync, conflicts, savingCount, localWrites, saveError, drafts, commit, getEntry, entriesOf, createHabit, updateHabit, setArchived, deleteHabit, reorder, setEntry, toggleEntry, stepEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion, deleteCompletion, addExamples, replaceAll, applyOpsCb, resolveConflict, showToast],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
