@@ -131,6 +131,11 @@ To test without the cloud, `npx supabase start` runs a complete local stack, inc
 - **Export/import:** JSON is version 3, including completions. Versions 1 and 2 are still accepted. Every file is fully validated before anything changes.
   - In account mode, an import replaces the account's data on all devices.
 
+## Deployment (Vercel)
+`vercel.json` contains the build, SPA fallback and cache headers. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (publishable key only) as Vercel environment variables, then run `npx vercel deploy --prod`. In Supabase, add the production URL as Site URL and Redirect URL (keep `http://localhost:4173/`). For people outside your Supabase organization to receive confirmation emails, configure custom SMTP. Details: HANDOFF.md, "Deployment (Vercel)".
+
+App updates install in the background and are used from the next start. Local data and unsent changes stay in IndexedDB and are not affected.
+
 ## Install on iPhone (offline)
 
 1. Open the hosted URL in Safari once (HTTPS).

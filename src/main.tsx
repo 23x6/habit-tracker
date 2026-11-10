@@ -32,7 +32,15 @@ createRoot(document.getElementById('root')!).render(
 );
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+  // A new version installs in the background and is used from the next app start. The running page keeps its
+  // code, so no reload interrupts a save; data lives in IndexedDB (incl. the sync outbox), never in the SW cache.
+  window.addEventListener('load', () =>
+    navigator.serviceWorker.register('./sw.js').then(
+      // Installed iPhone apps stay open for days: also look for updates when the app comes back to the front.
+      (reg) => document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && reg.update().catch(() => {})),
+      () => {},
+    ),
+  );
 }
 // On-screen keyboard: iOS Safari keeps the layout viewport, so bottom sheets would sit behind the keyboard.
 // Expose the covered height as --kb; sheets are lifted by it.

@@ -7,6 +7,44 @@ A real Supabase project is now connected for local use (app at `http://localhost
 
 **Manually verified by the user:** sync in both directions between a normal browser window and an incognito window signed in to the same account. A habit and its completion synchronized correctly. Everything else against the real backend is still unverified (see "Not verified").
 
+## Deployment (Vercel)
+Production URL: **not deployed yet** (waiting for the Vercel login; see below).
+
+Configuration in `vercel.json`:
+- Vite build: `npm ci`, then `npm run build`; output `dist/`.
+- SPA fallback: every path outside `/assets/` that isn't a file is served `index.html`. The app has no URL routes; this only keeps deep links and auth redirects from returning a 404.
+- Caching:
+  - `sw.js`, `index.html` and the manifest are sent with `no-cache`, so updates are found;
+  - hashed files in `/assets/` are cached as immutable.
+
+Build variables (Vercel → Project → Settings → Environment Variables), the same names as `.env.example`:
+- `VITE_SUPABASE_URL`;
+- `VITE_SUPABASE_ANON_KEY` (publishable key).
+
+Nothing else belongs there; they are baked into the public bundle, so never use the service_role key or the database password.
+
+Updates:
+- A new service worker installs in the background. It is also checked whenever the app comes back to the front (`visibilitychange` → `registration.update()`).
+- The running page keeps its code (no forced reload). The new version is used from the next start or reload.
+- Only the asset cache is replaced. IndexedDB, including unsent outbox entries and drafts, isn't touched by an update. Schema upgrades only add stores (`src/lib/db.ts`). A tab with an old version open gets `DB_BLOCKED` handling instead of losing data.
+
+Workflow (CLI, from the repository):
+1. `npx vercel login` (once);
+2. `npx vercel link`;
+3. `npx vercel env add VITE_SUPABASE_URL production` and the same for `VITE_SUPABASE_ANON_KEY`;
+4. `npx vercel deploy --prod`.
+
+The CLI deploys the checked-out working tree (here `feature/still-app`), not `main`. For automatic deploys on push, connect the GitHub repository in Vercel and set **Settings → Git → Production Branch** to `feature/still-app`, or merge into `main`.
+
+Supabase Auth (Authentication → URL Configuration):
+- **Site URL**: the production URL.
+- **Redirect URLs**: the production URL with `/` and with `/**`, plus `http://localhost:4173/`.
+- Email confirmation stays on.
+
+Email delivery:
+- Supabase's built-in email service only sends to addresses of the project's organization members and is heavily rate-limited.
+- For other people to register, configure custom SMTP (Authentication → Emails → SMTP Settings) with a provider of your choice. Not done; it needs the user's decision and possibly a paid plan.
+
 ## Iteration 4 (2026-11-10): dashboard, segmented motion, DE/EN, header, autosave
 Not committed yet at the time of writing.
 
