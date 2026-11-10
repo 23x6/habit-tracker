@@ -142,8 +142,17 @@ Email delivery:
   - **Review, previous week:** Gym 3/3, Lesen 2/7, Substack 2/2; the imported review text is in the prompts.
   - **Dashboard link** on Saturday: "Die Woche endet bald. Wochenrückblick öffnen".
   - **DE and EN** at 390 and 1440 px: no horizontal overflow, no page errors.
+- **Migration and deployment:**
+  - the user ran `20261111000000_reviews.sql` on the production Supabase project and reported success (2026-11-11);
+  - commit `9348b0a` was then deployed to `https://still-ashy-seven.vercel.app/` (deployment `dpl_EW7dTBdPJwtSPd8FAfyMqRZkgGp8`).
+- **Live check** (fresh Chromium profiles, local mode, DE 390 px and EN 1440 px):
+  - Statistics shows "5.–11. Nov. 2026" for 7 days and "13. Okt. – 11. Nov. 2026" for 30 days, with the daily, weekly-goal and activity cards;
+  - the review opens on "9.–15. Nov. 2026 · Diese Woche", "next" is disabled, and "previous" shows Nov 2–8;
+  - the three prompts appear in DE and EN;
+  - a saved answer is back after a reload;
+  - no overflow, no page errors.
 - **Not verified:**
-  - a real Supabase project (the migration has to be applied there, see above);
+  - syncing a review with a real account (needs a sign-in; the server side is covered by the PGlite tests against the same migration);
   - two real devices;
   - iPhone Safari (layout, keyboard over the prompts, draft restore after the app is killed);
   - VoiceOver.
