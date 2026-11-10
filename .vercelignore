@@ -6,3 +6,4 @@ dist
 still-export-*.json
 supabase/.temp
 .vercel
+design

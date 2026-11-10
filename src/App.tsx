@@ -4,7 +4,7 @@ import { HeaderAccountButton, LangSwitch, RecoverySheet, SaveStatus } from './co
 import { useT } from './i18n';
 import { DB_BLOCKED } from './lib/db';
 import { HabitSheet } from './components/HabitSheet';
-import { StreakWelcome } from './components/Streak';
+import { StreakCelebration, StreakWelcome } from './components/Streak';
 import { Icon, springs, ToastHost, useReduce } from './components/ui';
 import type { UIIcon } from './lib/icons';
 import { dueReminders, notify } from './lib/reminders';
@@ -120,6 +120,7 @@ export function App() {
         <HabitSheet open={!!sheet} habit={sheet?.habit ?? null} onClose={() => setSheet(null)} />
         <RecoverySheet />
         <StreakWelcome />
+        <StreakCelebration />
         <ToastHost />
       </div>
     </MotionConfig>

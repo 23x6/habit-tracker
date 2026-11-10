@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_DAYS, entryId, type Analysis, type Completion, type Entry, type Habit } from './model';
-import { computeStreak, dayStateAt, type StreakInput } from './streak';
+import { celebrationFor, computeStreak, dayStateAt, type StreakInput } from './streak';
 import { makeCompletion } from './weekly';
 
 // 2025-12-01 is a Monday. Weeks start on Monday unless a test says otherwise.
@@ -128,5 +128,53 @@ describe('activity streak', () => {
     const r = computeStreak(input([weekdays]), '2025-12-03', 1);
     expect(dayStateAt(r, [weekdays], '2025-12-05', '2025-12-03')).toBe('pending');
     expect(dayStateAt(r, [weekdays], '2025-12-06', '2025-12-03')).toBe('none');
+  });
+});
+
+describe('celebration of a newly earned day', () => {
+  const run = (entries: Entry[], today: string, weekStart: 0 | 1 = 1) => computeStreak(input([read], entries), today, weekStart);
+  const days = (...d: string[]) => d.map((x) => e(read, x));
+  const T = '2025-12-05'; // Friday
+
+  it('first earned day: 0 → 1 ("start")', () => {
+    expect(celebrationFor(run([], '2025-12-01'), run(days('2025-12-01'), '2025-12-01'), '2025-12-01', ['2025-12-01'], null)).toEqual({ date: '2025-12-01', from: 0, to: 1, kind: 'start' });
+  });
+
+  it('consecutive day: 4 → 5 ("continue"); a second action the same day does not replay', () => {
+    const before = run(days('2025-12-01', '2025-12-02', '2025-12-03', '2025-12-04'), T);
+    const after = run(days('2025-12-01', '2025-12-02', '2025-12-03', '2025-12-04', T), T);
+    expect(celebrationFor(before, after, T, [T], null)).toEqual({ date: T, from: 4, to: 5, kind: 'continue' });
+    expect(celebrationFor(after, after, T, [T], null)).toBeNull(); // more actions on an earned day
+  });
+
+  it('freeze recovery: frozen day held the streak, today continues it ("recovery"); the frozen day added nothing', () => {
+    const base = days('2025-12-01', '2025-12-02', '2025-12-03'); // Thu 12-04 missed → frozen
+    const before = run(base, T);
+    expect(before.protectedByFreeze).toBe(true);
+    expect(celebrationFor(before, run([...base, e(read, T)], T), T, [T], null)).toEqual({ date: T, from: 3, to: 4, kind: 'recovery' });
+  });
+
+  it('genuinely broken streak restarts at 1 without implying the old streak came back', () => {
+    const base = days('2025-12-01', '2025-12-02'); // Wed frozen, Thu missed → broken
+    const before = run(base, T);
+    expect(before.current).toBe(0);
+    expect(celebrationFor(before, run([...base, e(read, T)], T), T, [T], null)).toEqual({ date: T, from: 0, to: 1, kind: 'start' });
+  });
+
+  it('undo and reapply on the same day, or an already celebrated day, never replay', () => {
+    const before = run(days('2025-12-04'), T);
+    const after = run(days('2025-12-04', T), T);
+    expect(celebrationFor(before, after, T, [T], T)).toBeNull();
+  });
+
+  it('historical edits (backdating) update the number but are never celebrated as today', () => {
+    const before = run(days('2025-12-01', '2025-12-03'), '2025-12-04'); // Tue frozen
+    const after = run(days('2025-12-01', '2025-12-02', '2025-12-03'), '2025-12-04');
+    expect(after.current).toBe(3);
+    expect(celebrationFor(before, after, '2025-12-04', ['2025-12-02'], null)).toBeNull();
+  });
+
+  it('a write that does not change today (e.g. a sync-like update with no local action dated today) is quiet', () => {
+    expect(celebrationFor(run([], T), run(days(T), T), T, [], null)).toBeNull();
   });
 });

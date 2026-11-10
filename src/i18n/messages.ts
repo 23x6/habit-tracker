@@ -522,6 +522,8 @@ export const de = {
     skipSetting: 'Serien-Animation nach dem Anmelden überspringen',
     skipNote: 'Gilt für dieses Gerät.',
     dayLabel: (date: string, state: string) => `${date}: ${state}`,
+    celebrate: { start: 'Neue Serie gestartet', continue: 'Neuer Tag geschafft', recovery: 'Das Eis ist gebrochen – deine Serie läuft weiter' },
+    dismissHint: 'Tippen oder Escape schließt.',
   },
   reminder: { body: (name: string) => `Noch offen: ${name}` },
 };
@@ -1039,6 +1041,8 @@ export const en: Messages = {
     skipSetting: 'Skip the streak animation after signing in',
     skipNote: 'Applies to this device.',
     dayLabel: (date: string, state: string) => `${date}: ${state}`,
+    celebrate: { start: 'New streak started', continue: 'New day earned', recovery: 'The ice is broken – your streak continues' },
+    dismissHint: 'Tap or press Escape to close.',
   },
   reminder: { body: (name: string) => `Still open: ${name}` },
 };

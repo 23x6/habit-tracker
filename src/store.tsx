@@ -87,8 +87,17 @@ interface Store {
   syncNow: () => void;
   /** Local writes in flight (IndexedDB transaction not yet committed). */
   saving: boolean;
-  /** Counts local writes that have been durably committed (not sync pulls): lets UI react to the user's own saves. */
-  localWrites: number;
+  /**
+   * The user's own last write, after it was durably committed to IndexedDB (never a sync pull, import reload or
+   * failed save): `n` counts them, `dates` are the days of the habit actions it stored (entries, completions,
+   * analyses). Lets the UI react to a save exactly once — e.g. the streak celebration.
+   */
+  localWrite: { n: number; dates: DateKey[] };
+  /** Small per-partition (so per-account) device values in the local `meta` store; never synced. */
+  prefs: {
+    load: <T>(key: string) => Promise<T | undefined>;
+    save: (key: string, value: unknown) => Promise<void>;
+  };
   /** Last local write that failed; nothing of it was stored. `retry` writes the same change again. */
   saveError: { message: string; retry: () => void } | null;
   /** Unsent form text (journal / analysis drafts), stored in this partition's local database only. */
@@ -158,7 +167,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
   const [today, setToday] = useState(todayKey());
   const [toast, setToast] = useState<Toast | null>(null);
   const [savingCount, setSavingCount] = useState(0);
-  const [localWrites, setLocalWrites] = useState(0);
+  const [localWrite, setLocalWrite] = useState<{ n: number; dates: DateKey[] }>({ n: 0, dates: [] });
   const [saveError, setSaveError] = useState<{ message: string; ops: Op[] } | null>(null);
   // Toast texts are produced inside long-lived callbacks: read the current language through a ref.
   const t = useT();
@@ -243,7 +252,8 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
         }
         snapRef.current = applyOps(snapRef.current, ops); // the next queued write sees this one at once
         setSnap(snapRef.current);
-        setLocalWrites((n) => n + 1);
+        const dates = ops.flatMap((o) => (o.kind !== 'settings' && o.kind !== 'habit' && o.kind !== 'journal' && o.rec ? [(o.rec as { date: DateKey }).date] : []));
+        setLocalWrite((w) => ({ n: w.n + 1, dates }));
         return undo;
       });
       queue.current = run.catch(() => {});
@@ -501,6 +511,11 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
     [db],
   );
 
+  const prefs = useMemo<Store['prefs']>(
+    () => ({ load: <T,>(key: string) => db.getMeta<T>('pref:' + key), save: (key, value) => db.setMeta('pref:' + key, value) }),
+    [db],
+  );
+
   const value = useMemo<Store>(
     () => ({
       partition, snapshot: snap, status, error, habits, settings: snap.settings, today, toast, analyses: snap.analyses, journal: snap.journal,
@@ -508,7 +523,8 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
       reorder, setEntry, toggleEntry, stepEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion,
       deleteCompletion, addExamples, replaceAll, applyOps: applyOpsCb, resolveConflict, syncNow: () => manager.current?.schedule(0),
       saving: savingCount > 0,
-      localWrites,
+      localWrite,
+      prefs,
       saveError: saveError && {
         message: saveError.message,
         retry: () => {
@@ -520,7 +536,7 @@ export function StoreProvider({ partition, children }: { partition: Partition; c
       drafts,
       showToast, dismissToast: () => setToast(null),
     }),
-    [partition, status, error, habits, snap, today, toast, sync, conflicts, savingCount, localWrites, saveError, drafts, commit, getEntry, entriesOf, createHabit, updateHabit, setArchived, deleteHabit, reorder, setEntry, toggleEntry, stepEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion, deleteCompletion, addExamples, replaceAll, applyOpsCb, resolveConflict, showToast],
+    [partition, status, error, habits, snap, today, toast, sync, conflicts, savingCount, localWrite, prefs, saveError, drafts, commit, getEntry, entriesOf, createHabit, updateHabit, setArchived, deleteHabit, reorder, setEntry, toggleEntry, stepEntry, setSettings, saveAnalysis, deleteAnalysis, saveJournal, deleteJournal, toggleCompletion, saveCompletion, deleteCompletion, addExamples, replaceAll, applyOpsCb, resolveConflict, showToast],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

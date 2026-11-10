@@ -11,7 +11,7 @@ import { ALL_DAYS, type Habit } from '../lib/model';
 import { streakVerified, welcomeStep } from '../lib/streak';
 import type { SyncState } from '../lib/sync';
 import { StoreProvider, useStore } from '../store';
-import { StreakBadge, StreakWelcome, writeSkipWelcome } from './Streak';
+import { StreakBadge, StreakCelebration, StreakWelcome, writeSkipWelcome } from './Streak';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 // Node's own (disabled) `localStorage` global shadows jsdom's in this environment: provide a working one.
@@ -138,7 +138,7 @@ describe('streak welcome and dashboard badge', () => {
     const sheet = document.querySelector('.sheet')!;
     expect(sheet.querySelector('h2')!.textContent).toBe('Deine Aktiv-Serie');
     expect(sheet.textContent).toContain('2 Tage in Folge aktiv'); // nothing added for signing in
-    expect(sheet.querySelector('.flame-num')!.textContent).toBe('2');
+    expect(sheet.querySelector('.fl-num text')!.textContent).toBe('2');
     expect(sheet.textContent).toContain('Stand dieses Geräts');
     await wait(60);
     expect(document.activeElement?.textContent).toBe('Weiter');
@@ -172,23 +172,145 @@ describe('streak welcome and dashboard badge', () => {
     expect(badge()).toBe('Aktiv-Serie: 2 Tage. Verlauf und Regeln öffnen');
   });
 
-  it('celebrates only a day newly earned by a saved action, not the initial render; undo recomputes', async () => {
+  it('dashboard badge updates quietly: no animation on reload or when the streak grows', async () => {
     await act(async () => root.render(tree('still-streak-c', null, null, <StreakBadge />)));
     await seed([1]);
-    // Reopen: loading stored history (as after a reload or a sync) never celebrates.
-    await act(async () => root.unmount());
-    root = createRoot(host);
-    await act(async () => root.render(tree('still-streak-c', null, null, <StreakBadge />)));
-    for (let i = 0; i < 50 && store.status !== 'ready'; i++) await wait(20);
-    await wait(60);
     expect(badge()).toContain('1 Tag.');
-    expect(document.querySelector('.flame-flare')).toBeNull();
     await act(async () => store.toggleEntry(read, T));
     await wait(60);
     expect(badge()).toContain('2 Tage');
-    expect(document.querySelector('.flame-flare')).not.toBeNull();
-    await act(async () => store.toast!.undo!());
-    await wait(60);
+    expect(document.querySelector('.streak-badge svg')!.getAttribute('class')).toContain('anim-static');
+  });
+});
+
+// ---------- Celebration overlay (real store, real IndexedDB) ----------
+
+const overlay = () => document.querySelector('.celebrate');
+const rolled = () => [document.querySelector('.celebrate .fl-num-old')?.textContent ?? null, document.querySelector('.celebrate .fl-num-new')?.textContent ?? null];
+const flameAnim = () => document.querySelector('.celebrate .flame')!.getAttribute('class')!;
+const app = (partition: string, extra: React.ReactNode = null) => tree(partition, null, null, <><StreakBadge /><StreakCelebration />{extra}</>);
+async function remount(partition: string) {
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await act(async () => root.render(app(partition)));
+  for (let i = 0; i < 50 && store.status !== 'ready'; i++) await wait(20);
+  await wait(80);
+}
+const close = async () => {
+  await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
+  await wait(320);
+};
+
+describe('streak celebration', () => {
+  it('consecutive day: 5 → 6 after the save, once; more actions the same day and undo/redo never replay', async () => {
+    const water: Habit = { ...read, id: 'water', name: 'Wasser', kind: 'numeric', unit: 'ml', rules: [{ from: START, days: ALL_DAYS, target: 2000 }], order: 1 };
+    await act(async () => root.render(app('still-cel-1')));
+    await seed([5, 4, 3, 2, 1]);
+    await act(async () => store.applyOps([{ kind: 'habit', id: water.id, rec: water }]));
+    await wait(40);
+    expect(overlay()).toBeNull(); // seeding older days (backdated writes) never celebrates
+    const focused = document.querySelector<HTMLButtonElement>('.streak-badge')!;
+    act(() => focused.focus());
+
+    await act(async () => store.toggleEntry(read, T));
+    await wait(80);
+    expect(overlay()).not.toBeNull();
+    expect(rolled()).toEqual(['5', '6']); // real previous value, not from zero
+    expect(flameAnim()).toContain('anim-celebrate');
+    expect(overlay()!.textContent).toContain('6 Tage in Folge aktiv');
+    expect(overlay()!.textContent).toContain('Neuer Tag geschafft');
+    expect(document.activeElement).toBe(focused); // never takes focus
+    await close();
+    expect(overlay()).toBeNull();
+    expect(document.activeElement).toBe(focused);
+
+    await act(async () => store.stepEntry(water, T, 100)); // another action on the earned day
+    await wait(80);
+    expect(overlay()).toBeNull();
+    await act(async () => store.toggleEntry(read, T)); // undo …
+    await act(async () => store.stepEntry(water, T, -100));
+    await wait(40);
+    expect(badge()).toContain('5 Tage');
+    await act(async () => store.toggleEntry(read, T)); // … and reapply: counter updates, no replay
+    await wait(80);
+    expect(badge()).toContain('6 Tage');
+    expect(overlay()).toBeNull();
+  });
+
+  it('first earned day 0 → 1; a reload afterwards does not replay (stored per account and day)', async () => {
+    await act(async () => root.render(app('still-cel-2')));
+    await seed([]);
+    await act(async () => store.toggleEntry(read, T));
+    await wait(80);
+    expect(rolled()).toEqual(['0', '1']);
+    expect(overlay()!.textContent).toContain('Neue Serie gestartet');
+    await close();
+    await act(async () => store.toggleEntry(read, T)); // undo
+    await wait(40);
+    await remount('still-cel-2'); // "reload"
+    expect(overlay()).toBeNull();
+    await act(async () => store.toggleEntry(read, T)); // earn again after the reload
+    await wait(80);
+    expect(overlay()).toBeNull();
     expect(badge()).toContain('1 Tag.');
+  });
+
+  it('freeze recovery: ice cracks and shatters, the counter continues from the protected value', async () => {
+    await act(async () => root.render(app('still-cel-3')));
+    await seed([3, 2]); // yesterday missed → frozen by the weekly freeze
+    expect(badge()).toContain('durch Freeze geschützt');
+    await act(async () => store.toggleEntry(read, T));
+    await wait(80);
+    expect(flameAnim()).toContain('anim-recover');
+    expect(document.querySelectorAll('.celebrate .rv-shard')).toHaveLength(6);
+    expect(document.querySelectorAll('.celebrate .rv-cracks path').length).toBeGreaterThan(0);
+    expect(rolled()).toEqual(['2', '3']); // the frozen day added nothing
+    expect(overlay()!.textContent).toContain('Das Eis ist gebrochen');
+  });
+
+  it('a genuinely broken streak restarts at 1 — no ice, nothing "restored"', async () => {
+    await act(async () => root.render(app('still-cel-4')));
+    await seed([6, 5]); // then four missed days: at least two in one week → broken
+    expect(badge()).toContain('0 Tage');
+    await act(async () => store.toggleEntry(read, T));
+    await wait(80);
+    expect(flameAnim()).toContain('anim-celebrate');
+    expect(document.querySelector('.celebrate .rv-shard')).toBeNull();
+    expect(rolled()).toEqual(['0', '1']);
+    expect(overlay()!.textContent).toContain('Neue Serie gestartet');
+  });
+
+  it('never on a failed save, a historical edit or an account switch', async () => {
+    await act(async () => root.render(app('still-cel-5')));
+    await seed([1]);
+    // Failed save: a value IndexedDB can't store — nothing is written, nothing is celebrated.
+    const bad = { id: `read|${T}`, habitId: 'read', date: T, value: 1, note: '', updatedAt: 0, fn: () => 1 };
+    await act(async () => store.applyOps([{ kind: 'entry', id: bad.id, rec: bad }]).catch(() => {}));
+    await wait(80);
+    expect(overlay()).toBeNull();
+    expect(badge()).toContain('1 Tag.');
+    // Historical edit: backdating the day before yesterday raises the number quietly.
+    await act(async () => store.toggleEntry(read, addDays(T, -2)));
+    await wait(80);
+    expect(badge()).toContain('2 Tage');
+    expect(overlay()).toBeNull();
+    // Account switch: another partition with today already earned loads without celebrating.
+    await act(async () => root.render(app('still-cel-6')));
+    await seed([1, 0]);
+    await remount('still-cel-6');
+    expect(badge()).toContain('2 Tage');
+    expect(overlay()).toBeNull();
+  });
+
+  it('reduced motion: a short fade with the new number only, no roll, shards or blur', async () => {
+    await act(async () => root.render(app('still-cel-7')));
+    await seed([1]);
+    await act(async () => store.setSettings({ motion: 'reduce' }));
+    await act(async () => store.toggleEntry(read, T));
+    await wait(80);
+    expect(flameAnim()).toContain('anim-fade');
+    expect(rolled()).toEqual([null, null]);
+    expect(document.querySelector('.celebrate .flame text')!.textContent).toBe('2');
+    expect(overlay()!.className).toContain('reduced');
   });
 });

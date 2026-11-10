@@ -128,3 +128,29 @@ export function welcomeStep(o: { welcomeFor: string | null; userId: string | nul
 
 /** The number is confirmed by the server only after a successful sync with nothing left to upload. */
 export const streakVerified = (sync: SyncState | null) => !!sync && sync.status === 'synced' && sync.pending === 0 && sync.lastSync != null;
+
+// ---------- Celebration of a newly earned day ----------
+
+export type CelebrationKind = 'start' | 'continue' | 'recovery';
+export interface Celebration {
+  /** Day that was earned (always today). */
+  date: DateKey;
+  from: number;
+  to: number;
+  /** start: no running streak before (first day, or after a broken streak — starts at 1, nothing "restored");
+   *  continue: the streak goes on; recovery: the streak was held by a freeze and continues now. */
+  kind: CelebrationKind;
+}
+
+/**
+ * Whether the user's own durably saved write just earned today as a new streak day. `before`/`after` are the
+ * streak results right before and after that write; `writeDates` are the days of the actions it stored;
+ * `celebrated` is the last day already celebrated on this account and device. Edits of other days (backdating)
+ * only update the number quietly, and the same day never celebrates twice (undo + redo, more actions).
+ */
+export function celebrationFor(before: StreakResult, after: StreakResult, today: DateKey, writeDates: DateKey[], celebrated: DateKey | null | undefined): Celebration | null {
+  if (celebrated === today || !writeDates.includes(today)) return null;
+  if (before.days.get(today) === 'done' || after.days.get(today) !== 'done') return null;
+  const kind: CelebrationKind = before.protectedByFreeze ? 'recovery' : before.current === 0 ? 'start' : 'continue';
+  return { date: today, from: before.current, to: after.current, kind };
+}

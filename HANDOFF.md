@@ -65,6 +65,73 @@ Email delivery:
 - Supabase's built-in email service only sends to addresses of the project's organization members and is heavily rate-limited.
 - For other people to register, configure custom SMTP (Authentication → Emails → SMTP Settings) with a provider of your choice. Not done; it needs the user's decision and possibly a paid plan.
 
+## Iteration 7 (2026-11-10): streak celebration, red/blue flame, ice-break recovery
+### References (`design/`, local only; not committed, not deployed)
+- **`3216526ca7be165f63f0eb090a2be702.jpg`** (still image, not an HTML animation):
+  - neon flame icon: one outline with a large left tongue and a smaller right tongue, a drop inside, and a pink-to-blue glow;
+  - used for the **silhouette** (`OUTER`/`INNER` in `Streak.tsx`) and the fine bright edge line.
+- **`67d03661b8a24310378e5629_Disco_Streak_Freeze_EN 2.gif`** (101 frames, about 6 s; read frame by frame in Chromium with WebCodecs `ImageDecoder`):
+  - gray flame with 0 → colour rises from the base (orange outer, yellow inner) while the number jumps to 8;
+  - a day of the strip turns into a snowflake; embers fly up;
+  - the flame crossfades to blue with a frost ring, ice particles and a frosted halo.
+  - Used for the **motion**: ignition as a rising wipe with a licking edge, embers, the day pop in the strip, and the frozen look. The ice-break is the reverse of its freeze (it isn't in the GIF).
+- Neither file is embedded. Their UI (white page, "Next" button, sample counter) wasn't copied. The requested `design/streak-reference.gif` didn't exist; these two files were used instead.
+
+### Celebration (`StreakCelebration` in `Streak.tsx`, decision in `celebrationFor` in `lib/streak.ts`)
+- **Trigger:** only after the user's own write has been committed to IndexedDB. The store exposes `localWrite = { n, dates }`, set after the commit and never for sync pulls, import reloads or failed writes. Network sync is not awaited.
+- **Conditions:**
+  - today's state goes from not-done to `done`, and the write stored an action dated today;
+  - the day hasn't been celebrated on this account yet: `pref:streak-celebrated` in the partition's local `meta` store (per account and device, never synced).
+  - Consequences:
+    - another action the same day, or undo then redo, never replays;
+    - a reload, a token refresh, the initial historical sync or an account switch never triggers it;
+    - backdated edits only change the number quietly.
+- **Kinds:**
+  - `continue`: 5 → 6;
+  - `start`: 0 → 1, for the first day or after a genuinely broken streak, with no ice and nothing "restored";
+  - `recovery`: the streak was held by the freeze (`protectedByFreeze`) and today continues it, e.g. 3 → 4; the frozen day added nothing.
+- **Sequence:**
+  - `celebrate`, about 1.7 s on screen: dim backdrop; the gray flame fills with colour from the base (SMIL wipe started with `beginElementAt` on mount); embers; the counter rolls from the real old value to the new one with a short vertical roll, crossfade and a transient 1.4 px blur; the today cell of the strip pops; hold; fade out.
+  - `recover`, about 1.85 s: the blue frozen flame with the old number; cracks draw in; six shard wedges fly apart and fade; the red/orange flame underneath flares; then the counter roll.
+- **Interaction:**
+  - a tap anywhere or Escape closes it at once; Escape is captured, so a sheet underneath doesn't close too;
+  - it never takes focus (focus stays on the tapped control), so nothing needs restoring;
+  - if a text field has focus when it starts, the overlay ignores input entirely (`pointer-events: none`, no key handling);
+  - `role="status"` announces the new count.
+- **Reduced motion:** 150 ms fade, the new number only; no roll, blur, shards or wipe.
+- The **login welcome** stays separate: it shows the current streak and never counts or rolls.
+- The **dashboard badge** now updates quietly; its earlier flare was removed in favour of the overlay.
+
+### Colours (same `Flame` everywhere: overlay, dashboard, details sheet, welcome)
+- **Active:** coral-to-red outer flame, orange drop, warm glow; the number in deep brown.
+- **Frozen:** icy blue outer flame, pale cyan drop, hatched frost and crystal strokes, a snowflake badge and a cool glow.
+- **Cold:** gray outline.
+- **Day strip:** coral flame for active days, cyan snowflake for frozen days.
+- The rest of the interface stays charcoal gray. The glow canvas keeps 24 units of padding (3σ = 21), so it is never clipped.
+
+### Verification
+- `npm run typecheck` clean, `npm test` **130/130**, `npm run build` OK.
+- `lib/streak.test.ts`, 7 new cases for `celebrationFor`:
+  - first day; consecutive day and a second action;
+  - freeze recovery (3 → 4); genuinely broken streak (0 → 1, `start`);
+  - undo/redo already celebrated; backdating; a write without an action dated today.
+- `components/streak.test.tsx` (jsdom, real store and IndexedDB), 6 new tests:
+  - 5 → 6 after a real save with the real old value, focus unchanged, Escape closes it, and no replay for a second action or undo/redo;
+  - 0 → 1, then no replay after a remount ("reload");
+  - recovery renders 6 shards and cracks and rolls 2 → 3;
+  - broken streak renders no ice and rolls 0 → 1;
+  - nothing on a failed write (DataCloneError), a backdated edit or an account switch;
+  - reduced motion: fade only, no roll.
+  - The welcome tests still pass.
+- **Browser (Chromium via Playwright, dev server, Playwright's own profile):**
+  - **Frame captures:** `celebrate` at 60–2000 ms shows gray → the colour wipe rising → embers → 5/6 roll with blur → rest. `recover` at 100–2000 ms shows blue with the snowflake → cracks → shards → red flame → 3/4 roll.
+  - **Real app flow at 390 and 1440 px:** checking off a habit showed the overlay with 0 → 1 (flame 218 px and 280 px); focus stayed on the check button; Escape closed it at once; it disappeared on its own after about 2 s; a second check-off the same day didn't replay; no horizontal overflow.
+  - **Reduced motion** (emulated): `anim-fade`.
+- **Not verified:**
+  - Safari or iPhone: the SMIL wipe and `beginElementAt`, CSS animations and filters on SVG elements (Safari ignores CSS `filter` on SVG children, so the roll blur may be missing there), touch timing;
+  - a real account: a celebration on one device while the other only updates quietly through sync;
+  - VoiceOver.
+
 ## Iteration 6 (2026-11-10): activity streak, flame, login welcome
 Plan and open decisions: ROADMAP.md. The reference GIF named in the request was not available (not in the repository or the conversation). The artwork is original SVG built from the written description.
 
