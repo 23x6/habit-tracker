@@ -132,6 +132,8 @@ To test without the cloud, `npx supabase start` runs a complete local stack, inc
   - In account mode, an import replaces the account's data on all devices.
 
 ## Deployment (Vercel)
+Live: **https://still-ashy-seven.vercel.app/** (deployed from `feature/still-app`).
+
 `vercel.json` contains the build, SPA fallback and cache headers. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (publishable key only) as Vercel environment variables, then run `npx vercel deploy --prod`. In Supabase, add the production URL as Site URL and Redirect URL (keep `http://localhost:4173/`). For people outside your Supabase organization to receive confirmation emails, configure custom SMTP. Details: HANDOFF.md, "Deployment (Vercel)".
 
 App updates install in the background and are used from the next start. Local data and unsent changes stay in IndexedDB and are not affected.

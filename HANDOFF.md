@@ -8,7 +8,25 @@ A real Supabase project is now connected for local use (app at `http://localhost
 **Manually verified by the user:** sync in both directions between a normal browser window and an incognito window signed in to the same account. A habit and its completion synchronized correctly. Everything else against the real backend is still unverified (see "Not verified").
 
 ## Deployment (Vercel)
-Production URL: **not deployed yet** (waiting for the Vercel login; see below).
+Production URL: **https://still-ashy-seven.vercel.app/**
+- Vercel project `still`, deployed with the CLI from `feature/still-app`; first deployment from commit `5ba9990`.
+- The deployment alias `still-ryvo7.vercel.app` also works. Use only the URL above, since local data and the login are per address.
+- The project isn't connected to GitHub, so pushes don't deploy by themselves.
+
+Automated checks on the live URL (2026-11-10, Chromium via Playwright, Playwright's own profile, not signed in):
+- **Responses:** `/`, `/sw.js`, the manifest, icons and a deep link `/some/deep/link` all return 200 without login; Deployment Protection doesn't block the production URL.
+- **Cache headers:** `sw.js` is `no-cache`; `/assets/*` is `immutable`.
+- **Bundle:** contains the Supabase URL, no `service_role` and no secret key; the only `sb_secret_` match is supabase-js's prefix check.
+- **Layout and navigation:** at 1440, 390 and 320 px all four tabs open, with no horizontal overflow and no page errors.
+- **Language:** DE → EN switches immediately, survives a reload, and was switched back.
+- **Install and offline:** the service worker is active and controls the page; reload while offline works; the manifest is `standalone` with icons; the apple-touch-icon is present; secure context.
+- **Update, simulated locally** (copy of the build at `localhost:4180`; `sw.js` and `index.html` changed while the app was open):
+  - the `visibilitychange` check installed and activated the new worker, and the old cache was replaced;
+  - the open page kept running, and a check-off made in it was saved;
+  - after a reload the new version was shown; habits (5) and both check-offs were intact.
+
+Not tested: login, registration and sync against the production URL; Safari, iPhone and macOS; installing to the iPhone home screen.
+
 
 Configuration in `vercel.json`:
 - Vite build: `npm ci`, then `npm run build`; output `dist/`.
@@ -28,17 +46,19 @@ Updates:
 - The running page keeps its code (no forced reload). The new version is used from the next start or reload.
 - Only the asset cache is replaced. IndexedDB, including unsent outbox entries and drafts, isn't touched by an update. Schema upgrades only add stores (`src/lib/db.ts`). A tab with an old version open gets `DB_BLOCKED` handling instead of losing data.
 
-Workflow (CLI, from the repository):
+Workflow (CLI, from the repository; steps 1–3 are already done):
 1. `npx vercel login` (once);
 2. `npx vercel link`;
 3. `npx vercel env add VITE_SUPABASE_URL production` and the same for `VITE_SUPABASE_ANON_KEY`;
-4. `npx vercel deploy --prod`.
+4. `npx vercel deploy --prod` from a clean checkout of `feature/still-app` (commit first).
+
+`vercel link` appends a `VERCEL_OIDC_TOKEN` to `.env.local`. It was removed again here, and the app doesn't need it. `.vercelignore` keeps `.env*`, `dist`, `node_modules` and test artifacts out of the upload.
 
 The CLI deploys the checked-out working tree (here `feature/still-app`), not `main`. For automatic deploys on push, connect the GitHub repository in Vercel and set **Settings → Git → Production Branch** to `feature/still-app`, or merge into `main`.
 
 Supabase Auth (Authentication → URL Configuration):
 - **Site URL**: the production URL.
-- **Redirect URLs**: the production URL with `/` and with `/**`, plus `http://localhost:4173/`.
+- **Redirect URLs**: `https://still-ashy-seven.vercel.app/**` and `http://localhost:4173/**` (the app redirects to `<origin>/`).
 - Email confirmation stays on.
 
 Email delivery:

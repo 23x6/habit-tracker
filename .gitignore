@@ -7,3 +7,4 @@ still-export-*.json
 .env.*
 !.env.example
 supabase/.temp
+.vercel

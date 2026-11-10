@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+.env.*
+.playwright-mcp
+still-export-*.json
+supabase/.temp
+.vercel
