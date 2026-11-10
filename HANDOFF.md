@@ -146,6 +146,7 @@ A genuinely broken streak still uses the normal ignite (0 → 1) without ice.
   - a real account across two devices.
 
   Use the previews on the iPhone to check the look.
+- **Deployed** commit `f5682ff` to production (`https://still-ashy-seven.vercel.app/`, deployment `dpl_4d5zb4uzjnRGdMYnrgRh6p4x7rPk`). Live check in a fresh Chromium profile: title and manifest name „RYVO“, no overlay on load, the recovery preview plays (5 → 6), no page errors.
 
 ## Iteration 7 (2026-11-10): streak celebration, red/blue flame, ice-break recovery
 ### References (`design/`, local only; not committed, not deployed)
