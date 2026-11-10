@@ -1,0 +1,9 @@
+node_modules
+dist
+*.local
+still-export-*.json
+.playwright-mcp
+.env
+.env.*
+!.env.example
+supabase/.temp
