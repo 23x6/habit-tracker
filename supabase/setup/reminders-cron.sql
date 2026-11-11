@@ -1,7 +1,7 @@
 -- RYVO push reminders: scheduler setup (run once in the Supabase SQL Editor, AFTER
 -- supabase/migrations/20261112000000_push.sql).
 --
--- Replace <CRON_SECRET> with the same random value that is set as CRON_SECRET in the Vercel
+-- Replace the CRON_SECRET placeholder in the DECLARE line below with the same random value that is set as CRON_SECRET in the Vercel
 -- project (Settings → Environment Variables). Never commit the real value.
 --
 -- What it does:
